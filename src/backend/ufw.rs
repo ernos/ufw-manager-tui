@@ -41,6 +41,7 @@ const DEFAULT_TIMEOUT: Duration = Duration::from_secs(10);
  */
 pub struct UfwCli {
     program: String,
+    sudo_program: String,
     timeout: Duration,
     is_root: bool,
     readonly: bool,
@@ -92,6 +93,7 @@ impl UfwCli {
 
         Self {
             program,
+            sudo_program: "sudo".to_string(),
             timeout: DEFAULT_TIMEOUT,
             is_root,
             readonly,
@@ -134,6 +136,34 @@ impl UfwCli {
     }
 
     /**
+     * Test constructor for the escalation path: a non-root backend that can
+     * escalate, with both `ufw` and `sudo` replaced by scripts.
+     *
+     * # Arguments
+     *
+     * * `program` (`impl Into<String>`) - The executable to invoke instead of
+     *   `ufw`.
+     * * `sudo_program` (`impl Into<String>`) - The executable to invoke instead
+     *   of `sudo`.
+     *
+     * # Returns
+     *
+     * `UfwCli` - A backend that reports non-root, may escalate, and routes both
+     * `sudo -v` and `sudo ufw ...` through the given scripts.
+     */
+    #[doc(hidden)]
+    pub fn for_testing_escalatable(
+        program: impl Into<String>,
+        sudo_program: impl Into<String>,
+    ) -> Self {
+        let mut cli = Self::new(false, false);
+        cli.program = program.into();
+        cli.sudo_program = sudo_program.into();
+        cli.is_root = false;
+        cli
+    }
+
+    /**
      * Reports whether commands will run with root privileges.
      *
      * # Arguments
@@ -171,10 +201,27 @@ impl UfwCli {
      * Spawns a subprocess and blocks for up to the configured timeout.
      */
     fn invoke(&self, args: &[String]) -> Result<CmdOutput, BackendError> {
-        let mut command = Command::new(&self.program);
+        // Once `sudo -v` has succeeded, ufw must be run through sudo too: `sudo -v`
+        // only validates the cached credentials, it does not make later commands run
+        // as root. Without this, every write after pressing X fails with
+        // "You need to be root" and the rules stay hidden.
+        let mut command = Command::new(if self.privileged() && !self.is_root {
+            &self.sudo_program
+        } else {
+            &self.program
+        });
         // ufw's output is translated; every parser here is written for the C locale.
         command
-            .args(args)
+            .args(if self.privileged() && !self.is_root {
+                // `sudo -- ufw ...`; sudo keeps the cached credentials from `sudo -v`,
+                // so no password prompt appears. The `--` guard keeps ufw from being
+                // parsed as a sudo option.
+                let mut prefixed = vec!["--".to_string(), self.program.clone()];
+                prefixed.extend(args.iter().cloned());
+                prefixed
+            } else {
+                args.to_vec()
+            })
             .env("LC_ALL", "C")
             .env("LANG", "C")
             .stdin(Stdio::null())
@@ -539,8 +586,19 @@ impl Backend for UfwCli {
      * Spawns a subprocess.
      */
     fn counters(&self, rules: &[crate::core::rule::Rule]) -> Result<HitCounters, BackendError> {
-        let output = Command::new("nft")
-            .args(["-j", "list", "ruleset"])
+        // `nft list ruleset` needs root too, so once escalated it must go through
+        // sudo just like ufw does.
+        let mut command = Command::new(if self.privileged() && !self.is_root {
+            &self.sudo_program
+        } else {
+            "nft"
+        });
+        if self.privileged() && !self.is_root {
+            command.args(["--", "nft", "-j", "list", "ruleset"]);
+        } else {
+            command.args(["-j", "list", "ruleset"]);
+        }
+        let output = command
             .env("LC_ALL", "C")
             .output()
             .map_err(|error| BackendError::Io(error.to_string()))?;
@@ -699,7 +757,7 @@ impl Backend for UfwCli {
             return true;
         }
         // `sudo -v` needs the real terminal, so the caller must have left raw mode already.
-        let status = Command::new("sudo")
+        let status = Command::new(&self.sudo_program)
             .arg("-v")
             .stdin(Stdio::inherit())
             .stdout(Stdio::inherit())

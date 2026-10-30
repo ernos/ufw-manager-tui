@@ -4,7 +4,7 @@ A list of stuff to do and known bugs.
 
 ## Known bugs
 
-1. Keybinding `ctrl+X` will ask for sudo permissions but will fail to render the program correctly and permissions will not be inherited correctly. Needs fixing
+1. ~~Keybinding `ctrl+X` will ask for sudo permissions but will fail to render the program correctly and permissions will not be inherited correctly. Needs fixing~~ — Fixed: escalated commands now run through `sudo`, so rules render and writes succeed after `X`.
 2. On Home tab in list with Fixes, when applying a fix it adds another rule instead of replacing the one it is supposed to fix.
 3. Clearing the view on `Activity` tab does not work.
 

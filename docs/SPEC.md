@@ -628,6 +628,8 @@ Notes:
 - The app never writes to `/etc/ufw/*` directly; only `ufw` does.
 - Escalation is done by leaving raw mode, invoking `sudo -v` with the inherited TTY, and restoring the
   terminal afterwards. If it fails, the action is cancelled with a toast, never half-applied.
+  `sudo -v` only validates the credential cache, so once escalated every `ufw` (and `nft`) invocation is
+  run through `sudo` to actually use those credentials; the app never re-executes itself.
 - `--no-escalate` disables it for environments where sudo prompts are forbidden.
 
 ## 12. Keybindings

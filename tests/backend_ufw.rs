@@ -344,6 +344,70 @@ fn a_missing_ufw_binary_is_reported_clearly() {
 
 #[test]
 /**
+ * Verifies that after a successful `sudo -v` escalation, ufw commands are run
+ * through sudo so the cached credentials are actually used.
+ *
+ * `sudo -v` only validates the credential cache; it does not make later
+ * commands run as root. The backend must therefore prefix every ufw invocation
+ * with sudo once escalated, otherwise writes fail with "You need to be root"
+ * and the rules stay hidden.
+ *
+ * # Arguments
+ *
+ * This function takes no arguments.
+ *
+ * # Returns
+ *
+ * `()` - This function returns no value.
+ *
+ * # Panics
+ *
+ * Panics if escalation fails, reading state fails, or the recorded calls do not
+ * show the sudo prefix.
+ */
+fn escalated_commands_run_through_sudo() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let (script, log) = fake_ufw(dir.path());
+    // The sudo script must live in its own directory: `write_script` always
+    // names its output `ufw`, which would overwrite the fake ufw script above.
+    let sudo_dir = tempfile::tempdir().expect("tempdir");
+    let sudo_log = sudo_dir.path().join("sudo.log");
+    std::fs::write(&sudo_log, "").expect("write sudo log");
+    let sudo_script = write_script(
+        sudo_dir.path(),
+        &format!(
+            "#!/bin/sh\necho \"$@\" >> \"{sudo_log}\"\ncase \"$1\" in\n  -v) exit 0 ;;\n  --) shift; shift; exec \"{script}\" \"$@\" ;;\nesac\nexit 0\n",
+            sudo_log = sudo_log.display(),
+            script = script.display()
+        ),
+    );
+
+    let backend = UfwCli::for_testing_escalatable(
+        script.to_string_lossy().to_string(),
+        sudo_script.to_string_lossy().to_string(),
+    );
+    assert!(backend.may_escalate());
+    assert!(backend.escalate(), "sudo -v must succeed");
+
+    let state = backend
+        .read_state()
+        .expect("state must parse after escalation");
+    assert_eq!(state.rules.len(), 3);
+
+    let calls = std::fs::read_to_string(&log).expect("read ufw log");
+    assert!(
+        calls.contains("status numbered"),
+        "ufw must be invoked after escalation: {calls}"
+    );
+    let sudo_calls = std::fs::read_to_string(&sudo_log).expect("read sudo log");
+    assert!(
+        sudo_calls.contains(&format!("-- {} status numbered", script.display())),
+        "ufw must run through sudo after escalation: {sudo_calls}"
+    );
+}
+
+#[test]
+/**
  * Verifies that an inactive firewall with no rules is read as a disabled state
  * with an empty rule list.
  *
