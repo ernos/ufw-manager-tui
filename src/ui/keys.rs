@@ -106,6 +106,7 @@ pub const GLOBAL: HelpSection = HelpSection {
         ("u", "Undo the last change"),
         ("?", "This help"),
         ("q", "Quit"),
+        ("type", "While typing a value (e.g. an address) the letter and digit shortcuts are unbound"),
     ],
 };
 

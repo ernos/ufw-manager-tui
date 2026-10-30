@@ -528,6 +528,13 @@ impl App {
                 _ => {}
             }
         }
+        // While editing a text field, the letter and digit shortcuts are unbound so the user can
+        // type literally (for example an IP address) without triggering a tab jump or a command.
+        // The watchdog override above still wins because it is a safety mechanism.
+        if self.in_text_input() {
+            self.dispatch_tab_key(key);
+            return;
+        }
 
         match key.code {
             KeyCode::Char('q') => {
@@ -577,6 +584,11 @@ impl App {
             _ => {}
         }
 
+        self.dispatch_tab_key(key);
+    }
+
+    /// Routes a key to the handler for the active tab.
+    fn dispatch_tab_key(&mut self, key: KeyEvent) {
         match self.tab {
             Tab::Home => self.handle_home_key(key),
             Tab::Rules => self.handle_rules_key(key),
@@ -586,6 +598,18 @@ impl App {
             Tab::Presets => self.handle_presets_key(key),
             Tab::Help => self.handle_help_key(key),
         }
+    }
+
+    /// True while the user is expected to type free text (an address, port, filter, note, …).
+    /// In that state the letter and digit shortcuts are unbound so a keypress is inserted literally.
+    fn in_text_input(&self) -> bool {
+        if self.wizard.input.is_some() {
+            return true;
+        }
+        if self.tab == Tab::Test && self.traffic.field >= 2 {
+            return true;
+        }
+        false
     }
 
     fn on_tab_entered(&mut self) {

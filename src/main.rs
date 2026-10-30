@@ -24,6 +24,27 @@ use ufw_manager::config::Config;
 use ufw_manager::ui;
 use ufw_manager::ui::theme::Theme;
 
+/**
+ * Starts the application: parses command-line arguments, handles the internal
+ * watchdog mode, loads configuration and theme, selects the backend, and either
+ * dumps firewall state or runs the interactive terminal UI.
+ *
+ * # Arguments
+ *
+ * This function takes no arguments. It reads the process arguments via
+ * [`Cli::parse`] and environment variables such as `UFW_MANAGER_UFW`.
+ *
+ * # Returns
+ *
+ * `anyhow::Result<()>` - `Ok(())` when the requested operation completes
+ * successfully. Errors are returned when the backend cannot read state, the
+ * terminal cannot be initialized, or the event loop fails.
+ *
+ * # Panics
+ *
+ * Panics if watchdog mode is selected without a nonce path. This invariant is
+ * guaranteed by [`Cli::is_watchdog`], which requires both fields to be present.
+ */
 fn main() -> Result<()> {
     let cli = Cli::parse();
 
@@ -77,6 +98,20 @@ fn main() -> Result<()> {
 struct TerminalGuard;
 
 impl TerminalGuard {
+    /**
+     * Switches the terminal into raw mode and the alternate screen, then installs
+     * a panic hook so the terminal is restored even on a panic.
+     *
+     * # Arguments
+     *
+     * This function takes no arguments.
+     *
+     * # Returns
+     *
+     * `anyhow::Result<TerminalGuard>` - A guard whose `Drop` implementation
+     * restores the terminal. Returns an error if raw mode or the alternate
+     * screen cannot be enabled.
+     */
     fn enter() -> Result<Self> {
         enable_raw_mode().context("could not switch the terminal to raw mode")?;
         execute!(stdout(), EnterAlternateScreen).context("could not open the alternate screen")?;
@@ -86,16 +121,57 @@ impl TerminalGuard {
 }
 
 impl Drop for TerminalGuard {
+    /**
+     * Restores the terminal when the guard goes out of scope, including during
+     * early returns and unwinding.
+     *
+     * # Arguments
+     *
+     * * `self` - `&mut TerminalGuard` - The guard being dropped. Its fields are
+     *   not inspected; dropping it is the signal to restore the terminal.
+     *
+     * # Returns
+     *
+     * `()` - This function returns no value. Restoration errors are ignored so
+     * dropping cannot panic.
+     */
     fn drop(&mut self) {
         restore_terminal();
     }
 }
 
+/**
+ * Best-effort restoration of the terminal: disables raw mode and leaves the
+ * alternate screen. Errors are intentionally ignored because this runs during
+ * shutdown and panic handling, where there is no useful recovery path.
+ *
+ * # Arguments
+ *
+ * This function takes no arguments.
+ *
+ * # Returns
+ *
+ * `()` - This function returns no value.
+ */
 fn restore_terminal() {
     let _ = disable_raw_mode();
     let _ = execute!(stdout(), LeaveAlternateScreen);
 }
 
+/**
+ * Replaces the process panic hook with one that restores the terminal before
+ * delegating to the previously installed hook. This prevents a panic from
+ * leaving the terminal in raw mode or on the alternate screen.
+ *
+ * # Arguments
+ *
+ * This function takes no arguments. It captures the existing hook internally.
+ *
+ * # Returns
+ *
+ * `()` - This function returns no value. The hook is installed globally for the
+ * remainder of the process.
+ */
 fn install_panic_hook() {
     let previous = std::panic::take_hook();
     std::panic::set_hook(Box::new(move |info| {
@@ -104,6 +180,27 @@ fn install_panic_hook() {
     }));
 }
 
+/**
+ * Runs the interactive event loop: draws the UI, handles terminal input and
+ * signals, services privilege-escalation requests, and ticks application state
+ * until the user quits or a termination signal is received.
+ *
+ * # Arguments
+ *
+ * * `app` - `App` - The initialized application state. It is taken by value and
+ *   mutated in place while the loop runs.
+ *
+ * # Returns
+ *
+ * `anyhow::Result<()>` - `Ok(())` after a clean shutdown. Returns an error if
+ * terminal setup, drawing, event polling, or terminal clearing fails.
+ *
+ * # Terminal behavior
+ *
+ * A [`TerminalGuard`] is created for the duration of the loop. Before asking
+ * `sudo` for privileges, the terminal is restored so the password prompt can use
+ * the real terminal, then the guard is re-entered and the screen is cleared.
+ */
 fn run(mut app: App) -> Result<()> {
     let quit = Arc::new(AtomicBool::new(false));
     install_signal_handlers(Arc::clone(&quit));
@@ -150,8 +247,22 @@ fn run(mut app: App) -> Result<()> {
     result
 }
 
-/// Best-effort signal handling: `SIGINT`, `SIGTERM` and `SIGHUP` set a flag that the loop checks, so
-/// the terminal is restored through the normal path instead of being left in raw mode.
+/**
+ * Registers best-effort handlers for the standard termination signals so the
+ * event loop can exit through its normal shutdown path and restore the terminal.
+ *
+ * # Arguments
+ *
+ * * `flag` - `Arc<AtomicBool>` - Shared quit flag. Each registered signal sets
+ *   this flag to `true`; the event loop polls it and breaks on the next
+ *   iteration. The `Arc` is cloned for each signal registration.
+ *
+ * # Returns
+ *
+ * `()` - This function returns no value. Registration failures are ignored
+ * because signal handling is a best-effort enhancement rather than a
+ * requirement for the UI to function.
+ */
 fn install_signal_handlers(flag: Arc<AtomicBool>) {
     for signal in signal_hook::consts::TERM_SIGNALS {
         let flag = Arc::clone(&flag);
@@ -159,6 +270,21 @@ fn install_signal_handlers(flag: Arc<AtomicBool>) {
     }
 }
 
+/**
+ * Prints a human-readable snapshot of the firewall state to standard output,
+ * including the backend label, enabled/logging flags, default policies, rule
+ * count and summaries, and any rows that could not be parsed.
+ *
+ * # Arguments
+ *
+ * * `backend` - `&dyn Backend` - The backend used to read the current firewall
+ *   state and its display label. The reference is not retained.
+ *
+ * # Returns
+ *
+ * `anyhow::Result<()>` - `Ok(())` after the snapshot is printed. Returns an
+ * error if [`Backend::read_state`] fails.
+ */
 fn dump_state(backend: &dyn Backend) -> Result<()> {
     let state = backend.read_state()?;
     println!("backend: {}", backend.label());

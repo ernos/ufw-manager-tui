@@ -519,3 +519,65 @@ impl ufw_manager::backend::Backend for EscalatableBackend {
         true
     }
 }
+
+#[test]
+fn letters_are_inserted_in_the_test_tab_source_field_instead_of_running_commands() {
+    let mut app = app();
+    app.tab = Tab::Test;
+    // Move from field 0 to field 2 (the source address), which is a text field.
+    press(&mut app, KeyCode::Down);
+    press(&mut app, KeyCode::Down);
+    assert_eq!(app.traffic.field, 2);
+
+    // 'q' would quit if the global shortcut were still bound.
+    press(&mut app, KeyCode::Char('q'));
+    assert!(!app.should_quit, "'q' must be inserted, not quit");
+    assert!(app.traffic.src.value().contains('q'));
+}
+
+#[test]
+fn digits_are_inserted_in_the_test_tab_source_field_instead_of_jumping_tabs() {
+    let mut app = app();
+    app.tab = Tab::Test;
+    press(&mut app, KeyCode::Down);
+    press(&mut app, KeyCode::Down);
+    assert_eq!(app.traffic.field, 2);
+
+    // '4' would jump to the Test tab if the global shortcut were still bound.
+    press(&mut app, KeyCode::Char('4'));
+    assert_eq!(app.tab, Tab::Test, "the tab must not change while typing");
+    assert!(app.traffic.src.value().contains('4'));
+}
+
+#[test]
+fn global_shortcuts_still_work_outside_text_fields_on_the_test_tab() {
+    let mut app = app();
+    app.tab = Tab::Test;
+    // Field 0 (direction) is a selector, not a text field, so shortcuts stay bound.
+    assert_eq!(app.traffic.field, 0);
+    press(&mut app, KeyCode::Char('1'));
+    assert_eq!(app.tab, Tab::Home, "tab jump still works outside text input");
+}
+
+#[test]
+fn wizard_address_input_unbinds_shortcuts() {
+    let mut app = app();
+    app.start_add();
+    assert_eq!(app.tab, Tab::Add);
+
+    // Goal -> Who
+    press(&mut app, KeyCode::Enter);
+    assert_eq!(app.wizard.step, WizardStep::Who);
+    // Select "One specific address or network".
+    press(&mut app, KeyCode::Down);
+    press(&mut app, KeyCode::Enter);
+    assert!(app.wizard.input.is_some(), "the address field should be open");
+
+    // 'q' and '1' must be inserted, not trigger quit / tab jump.
+    press(&mut app, KeyCode::Char('q'));
+    press(&mut app, KeyCode::Char('1'));
+    assert!(!app.should_quit, "'q' must be inserted into the address field");
+    let (_, input) = app.wizard.input.as_ref().expect("still editing");
+    assert!(input.value().contains('q'));
+    assert!(input.value().contains('1'));
+}
