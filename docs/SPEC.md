@@ -336,12 +336,13 @@ the Add tab with the draft prefilled.
 `T` runs the simulator (§9.1) against the **pending** ruleset — current rules plus the draft — and shows the
 trace inline. This is the feature that removes the fear of applying a change.
 
-`A` opens the raw form (action, direction, interface, protocol, port spec, from addr, to addr, log, comment)
-with all fields pre-filled from the wizard. Escape hatch, not the primary path.
+`A` (or `a`) opens the raw form (action, direction, interface, protocol, port spec, from addr, to addr, log,
+comment) with all fields pre-filled from the wizard. Escape hatch, not the primary path.
 
 When the **Skip wizard** setting (§6.8) is enabled, `a` on the Rules tab opens the wizard directly on the
 Advanced step, pre-filled from the configured defaults, so an experienced user goes straight to the raw form
-and the review screen.
+and the review screen. Editing a rule (`e`) behaves the same way: with skip-wizard enabled it opens on the
+Advanced step pre-filled from the rule being edited.
 
 ### 6.4 Test
 
@@ -444,7 +445,8 @@ wizard is skipped. Every change is written to `config.toml` immediately.
 - **Text rows** (Interface, From address, To address) open a text input on `ENTER`; empty or `any` input
   means "any".
 - **Skip wizard** (`SPACE`) makes `a` on the Rules tab open the wizard directly on the Advanced step,
-  pre-filled from these defaults.
+  pre-filled from these defaults. Editing (`e`) an existing rule also opens on the Advanced step when
+  this is enabled.
 - Editing or duplicating an existing rule always uses that rule's own values, never these defaults.
 
 ## 7. Rule model
@@ -696,6 +698,14 @@ drift. `↑↓←→` + `Enter` + `Esc` alone complete every task.
 | `t` | Test traffic against this rule |
 | `/` | Filter |
 | `Space` | Enter the detail pane |
+
+### Add tab
+
+| Key | Action |
+|---|---|
+| `a` / `A` | Jump straight to the advanced step |
+| `Enter` | Confirm the current step |
+| `Esc` | Go back one step |
 
 ### Footer
 

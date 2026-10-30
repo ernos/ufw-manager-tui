@@ -1788,8 +1788,10 @@ impl App {
      * Opens the wizard to edit the selected rule.
      *
      * The wizard starts on the review step with the rule converted to a draft and
-     * the rule number remembered as the edit target. Forward (route) rules are
-     * refused with a warning because they are read-only in this version.
+     * the rule number remembered as the edit target; when the skip-wizard
+     * setting is enabled it starts on the advanced step instead. Forward (route)
+     * rules are refused with a warning because they are read-only in this
+     * version.
      *
      * # Arguments
      *
@@ -1811,7 +1813,11 @@ impl App {
             return;
         }
         self.wizard = Wizard {
-            step: WizardStep::Review,
+            step: if self.skip_wizard {
+                WizardStep::Advanced
+            } else {
+                WizardStep::Review
+            },
             draft: rule.to_draft(),
             cursor: 0,
             input: None,
@@ -2170,8 +2176,8 @@ impl App {
      *
      * When a text field is open, characters are inserted and Enter submits the
      * value while Escape cancels. Otherwise navigation keys move the option
-     * cursor, Escape goes back a step, Enter/Right/`l` confirms the step, and `A`
-     * jumps to the advanced step.
+     * cursor, Escape goes back a step, Enter/Right/`l` confirms the step, and
+     * `a`/`A` jumps to the advanced step.
      *
      * # Arguments
      *
@@ -2244,7 +2250,10 @@ impl App {
             }
             KeyCode::Esc => self.wizard_back(),
             KeyCode::Enter | KeyCode::Right | KeyCode::Char('l') => self.wizard_confirm(),
-            KeyCode::Char('A') => self.wizard.step = WizardStep::Advanced,
+            KeyCode::Char('a') | KeyCode::Char('A') => {
+                self.wizard.step = WizardStep::Advanced;
+                self.wizard.cursor = 0;
+            }
             _ => {}
         }
     }

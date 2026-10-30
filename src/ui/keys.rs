@@ -66,6 +66,7 @@ const RULES_HINTS: &[Hint] = &[
 const ADD_HINTS: &[Hint] = &[
     hint("↑↓", "choose"),
     hint("ENTER", "next"),
+    hint("a", "advanced edit"),
     hint("ESC", "back"),
     hint("?", "help"),
 ];
@@ -192,6 +193,15 @@ pub const DIALOGS: HelpSection = HelpSection {
     ],
 };
 
+pub const ADD: HelpSection = HelpSection {
+    title: "Add tab",
+    entries: &[
+        ("a / A", "Jump straight to the advanced step"),
+        ("ENTER", "Confirm the current step"),
+        ("ESC", "Go back one step"),
+    ],
+};
+
 pub const SETTINGS: HelpSection = HelpSection {
     title: "Settings",
     entries: &[
@@ -222,7 +232,7 @@ pub const GLOSSARY: HelpSection = HelpSection {
 /**
  * Returns the help screen's sections in display order.
  *
- * The array is a copy of the five static [`HelpSection`] constants, so the
+ * The array is a copy of the six static [`HelpSection`] constants, so the
  * caller can iterate over them without knowing their names.
  *
  * # Arguments
@@ -231,11 +241,11 @@ pub const GLOSSARY: HelpSection = HelpSection {
  *
  * # Returns
  *
- * A `[HelpSection; 5]` containing the global keys, the Rules keys, the dialog
- * keys, the Settings keys and the glossary, in that order.
+ * A `[HelpSection; 6]` containing the global keys, the Rules keys, the dialog
+ * keys, the Add tab keys, the Settings keys and the glossary, in that order.
  */
-pub fn help_sections() -> [HelpSection; 5] {
-    [GLOBAL, RULES, DIALOGS, SETTINGS, GLOSSARY]
+pub fn help_sections() -> [HelpSection; 6] {
+    [GLOBAL, RULES, DIALOGS, ADD, SETTINGS, GLOSSARY]
 }
 
 #[cfg(test)]

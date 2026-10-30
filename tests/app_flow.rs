@@ -495,6 +495,70 @@ fn editing_an_existing_rule_opens_the_wizard_prefilled() {
 
 #[test]
 /**
+ * Verifies that with skip-wizard enabled, editing a rule opens the wizard on
+ * the advanced step instead of the review step.
+ *
+ * # Arguments
+ *
+ * This function takes no arguments.
+ *
+ * # Returns
+ *
+ * `()` - This function returns no value.
+ *
+ * # Panics
+ *
+ * Panics if the wizard does not open on the advanced step or the edit target
+ * is lost.
+ */
+fn editing_a_rule_with_skip_wizard_opens_the_advanced_step() {
+    let mut app = app();
+    app.skip_wizard = true;
+    app.config.skip_wizard = true;
+    app.tab = Tab::Rules;
+    app.rules_cursor = 0;
+    press(&mut app, KeyCode::Char('e'));
+
+    assert_eq!(app.tab, Tab::Add);
+    assert_eq!(app.wizard.step, WizardStep::Advanced);
+    assert_eq!(app.wizard.editing, Some(1));
+    assert_eq!(app.wizard.draft.to_port.to_string(), "22");
+}
+
+#[test]
+/**
+ * Verifies that pressing `a` on the Add tab jumps straight to the advanced
+ * step from any wizard step.
+ *
+ * # Arguments
+ *
+ * This function takes no arguments.
+ *
+ * # Returns
+ *
+ * `()` - This function returns no value.
+ *
+ * # Panics
+ *
+ * Panics if the wizard does not land on the advanced step.
+ */
+fn the_add_tab_a_key_jumps_to_the_advanced_step() {
+    let mut app = app();
+    app.start_add();
+    assert_eq!(app.wizard.step, WizardStep::Goal);
+
+    press(&mut app, KeyCode::Char('a'));
+    assert_eq!(app.wizard.step, WizardStep::Advanced);
+    assert_eq!(app.wizard.cursor, 0);
+
+    // The uppercase form works too, and from a later step.
+    app.wizard.step = WizardStep::Service;
+    press(&mut app, KeyCode::Char('A'));
+    assert_eq!(app.wizard.step, WizardStep::Advanced);
+}
+
+#[test]
+/**
  * Verifies that the shadowed-rule detector finds rule 3 shadowed by rule 1 in
  * the demo rule set.
  *

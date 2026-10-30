@@ -36,7 +36,7 @@ pub fn draw(frame: &mut Frame, area: Rect, app: &App) {
             let is_heading = text.ends_with(':')
                 || matches!(
                     text.as_str(),
-                    "Everywhere" | "Rules" | "In a dialog" | "Settings" | "Plain-English glossary"
+                    "Everywhere" | "Rules" | "In a dialog" | "Add tab" | "Settings" | "Plain-English glossary"
                 );
             if is_heading {
                 Line::from(Span::styled(

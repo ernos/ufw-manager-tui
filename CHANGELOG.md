@@ -1,6 +1,11 @@
 
 # CHANGELOG
 
+## Version 0.1.4
+
+- Editing a rule (`e` on the Rules tab) now opens the wizard on the Advanced step when the "Skip wizard" setting is enabled, matching how adding a rule behaves.
+- Added an `a` "advanced edit" shortcut on the Add tab: it jumps straight to the Advanced step from any wizard step.
+
 ## Version 0.1.3
 
 - Added a Settings tab (digit `8`) with configurable defaults for new rules: Action, Direction, Interface, Protocol, From address, To address and Logging. Changes are saved to `config.toml` immediately.
