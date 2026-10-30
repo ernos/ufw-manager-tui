@@ -30,8 +30,7 @@ use crate::app::{App, MessageLevel, Modal, StatusLevel, Tab};
  * # Arguments
  *
  * * `frame` (`&mut Frame`) - The terminal frame everything is rendered into.
- * * `app` (`&App`) - The application state supplying the tab, theme, status,
- *   banners, watchdog and modal.
+ * * `app` (`&App`) - The application state supplying the tab, theme, status, banners, watchdog and modal.
  *
  * # Returns
  *
@@ -119,8 +118,7 @@ pub fn draw(frame: &mut Frame, app: &App) {
  *
  * * `frame` (`&mut Frame`) - The terminal frame the header is rendered into.
  * * `area` (`Rect`) - The single-row region reserved for the header.
- * * `app` (`&App`) - The application state supplying the hostname, the backend
- *   and the theme.
+ * * `app` (`&App`) - The application state supplying the hostname, the backend and the theme.
  *
  * # Returns
  *
@@ -198,8 +196,7 @@ fn draw_tabs(frame: &mut Frame, area: Rect, app: &App) {
  *
  * * `frame` (`&mut Frame`) - The terminal frame the banner is rendered into.
  * * `area` (`Rect`) - The single-row region reserved for the banner.
- * * `app` (`&App`) - The application state supplying the read-only flag and
- *   the theme.
+ * * `app` (`&App`) - The application state supplying the read-only flag and the theme.
  *
  * # Returns
  *
@@ -233,8 +230,7 @@ fn draw_readonly_banner(frame: &mut Frame, area: Rect, app: &App) {
  *
  * * `frame` (`&mut Frame`) - The terminal frame the banner is rendered into.
  * * `area` (`Rect`) - The single-row region reserved for the banner.
- * * `app` (`&App`) - The application state supplying the watchdog, its
- *   remaining time and the theme.
+ * * `app` (`&App`) - The application state supplying the watchdog, its remaining time and the theme.
  *
  * # Returns
  *
@@ -491,8 +487,7 @@ fn draw_modal(frame: &mut Frame, area: Rect, app: &App, modal: &Modal) {
  *
  * # Arguments
  *
- * * `pending` (`&crate::core::lockout::PendingChange`) - The change awaiting
- *   confirmation.
+ * * `pending` (`&crate::core::lockout::PendingChange`) - The change awaiting confirmation.
  *
  * # Returns
  *

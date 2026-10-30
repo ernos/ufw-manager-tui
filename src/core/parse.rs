@@ -37,8 +37,7 @@ use crate::core::rule::{
  *
  * * `active` (`bool`) - Whether the status line reported the firewall as active.
  * * `rules` (`Vec<Rule>`) - The rules that were parsed successfully.
- * * `unparsed` (`Vec<String>`) - Rows that could not be parsed, kept verbatim so they
- *   are still shown and can still be deleted by number.
+ * * `unparsed` (`Vec<String>`) - Rows that could not be parsed, kept verbatim so they are still shown and can still be deleted by number.
  */
 pub struct ParsedRules {
     pub active: bool,
@@ -245,8 +244,7 @@ pub struct BlockEvent {
  * # Fields
  *
  * * `enabled` (`Option<bool>`) - The `ENABLED` value, or `None` when the key was absent.
- * * `log_level` (`Option<LogLevel>`) - The `LOGLEVEL` value, or `None` when the key was
- *   absent or unrecognized.
+ * * `log_level` (`Option<LogLevel>`) - The `LOGLEVEL` value, or `None` when the key was absent or unrecognized.
  */
 pub struct UfwConf {
     pub enabled: Option<bool>,
@@ -778,10 +776,8 @@ pub fn parse_status_verbose(text: &str) -> ParsedHeader {
  *
  * # Arguments
  *
- * * `rest` (`&str`) - The text after `Default:`, for example
- *   `deny (incoming), allow (outgoing)`.
- * * `header` (`&mut ParsedHeader`) - The header being filled in; it is mutated in
- *   place.
+ * * `rest` (`&str`) - The text after `Default:`, for example `deny (incoming), allow (outgoing)`.
+ * * `header` (`&mut ParsedHeader`) - The header being filled in; it is mutated in place.
  *
  * # Returns
  *

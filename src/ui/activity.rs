@@ -21,8 +21,7 @@ use crate::core::util;
  *
  * * `frame` (`&mut Frame`) - The terminal frame the widgets are rendered into.
  * * `area` (`Rect`) - The screen region reserved for the Activity tab.
- * * `app` (`&App`) - The application state supplying the blocked rows, the
- *   journal, the theme and the current selection.
+ * * `app` (`&App`) - The application state supplying the blocked rows, the journal, the theme and the current selection.
  *
  * # Returns
  *
@@ -47,8 +46,7 @@ pub fn draw(frame: &mut Frame, area: Rect, app: &App) {
  *
  * * `frame` (`&mut Frame`) - The terminal frame the table is rendered into.
  * * `area` (`Rect`) - The region reserved for the blocked-traffic table.
- * * `app` (`&App`) - The application state supplying the rows, the cursor, the
- *   theme and the current log level.
+ * * `app` (`&App`) - The application state supplying the rows, the cursor, the theme and the current log level.
  *
  * # Returns
  *

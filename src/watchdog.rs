@@ -20,10 +20,8 @@ use serde::{Deserialize, Serialize};
  *
  * # Fields
  *
- * * `inverse` (`Vec<Vec<String>>`) - Commands that restore the previous
- *   firewall configuration, each as an argument vector.
- * * `description` (`String`) - Human description of what is being guarded,
- *   shown in the countdown banner.
+ * * `inverse` (`Vec<Vec<String>>`) - Commands that restore the previous firewall configuration, each as an argument vector.
+ * * `description` (`String`) - Human description of what is being guarded, shown in the countdown banner.
  */
 pub struct WatchdogState {
     /// Commands that restore the previous firewall configuration.
@@ -42,11 +40,9 @@ pub struct WatchdogState {
  * # Fields
  *
  * * `state_path` (`PathBuf`) - The state file the helper reads.
- * * `cancel_path` (`PathBuf`) - The marker file whose presence cancels the
- *   revert.
+ * * `cancel_path` (`PathBuf`) - The marker file whose presence cancels the revert.
  * * `description` (`String`) - Human description of the guarded change.
- * * `expires_at` (`std::time::Instant`) - When the helper will revert unless
- *   cancelled.
+ * * `expires_at` (`std::time::Instant`) - When the helper will revert unless cancelled.
  * * `seconds` (`u64`) - The configured delay in seconds.
  */
 pub struct Watchdog {
@@ -145,8 +141,7 @@ impl Watchdog {
  *
  * # Arguments
  *
- * * `state_path` (`&Path`) - The path of the watchdog state file, for example
- *   `watchdog.json`.
+ * * `state_path` (`&Path`) - The path of the watchdog state file, for example `watchdog.json`.
  *
  * # Returns
  *
@@ -169,10 +164,8 @@ pub fn cancel_path_for(state_path: &Path) -> PathBuf {
  *
  * # Arguments
  *
- * * `inverse` (`Vec<Vec<String>>`) - The commands that restore the previous
- *   firewall configuration, each as an argument vector.
- * * `description` (`String`) - Human description of the guarded change, shown
- *   in the countdown banner and stored in the state file.
+ * * `inverse` (`Vec<Vec<String>>`) - The commands that restore the previous firewall configuration, each as an argument vector.
+ * * `description` (`String`) - Human description of the guarded change, shown in the countdown banner and stored in the state file.
  * * `seconds` (`u64`) - How long to wait before reverting.
  *
  * # Returns
@@ -246,8 +239,7 @@ pub fn spawn(inverse: Vec<Vec<String>>, description: String, seconds: u64) -> Op
  *
  * * `state_path` (`&Path`) - The watchdog state file written by [`spawn`].
  * * `seconds` (`u64`) - How long to wait before reverting.
- * * `program` (`&str`) - The executable used to run each inverse command, for
- *   example `ufw`.
+ * * `program` (`&str`) - The executable used to run each inverse command, for example `ufw`.
  *
  * # Returns
  *

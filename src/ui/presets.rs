@@ -19,8 +19,7 @@ use crate::core::risk::RiskLevel;
  *
  * * `frame` (`&mut Frame`) - The terminal frame the widgets are rendered into.
  * * `area` (`Rect`) - The screen region reserved for the Presets tab.
- * * `app` (`&App`) - The application state supplying the presets, the cursor
- *   and the theme.
+ * * `app` (`&App`) - The application state supplying the presets, the cursor and the theme.
  *
  * # Returns
  *
@@ -44,8 +43,7 @@ pub fn draw(frame: &mut Frame, area: Rect, app: &App) {
  *
  * * `frame` (`&mut Frame`) - The terminal frame the list is rendered into.
  * * `area` (`Rect`) - The region reserved for the recipe list.
- * * `app` (`&App`) - The application state supplying the presets, the cursor
- *   and the theme.
+ * * `app` (`&App`) - The application state supplying the presets, the cursor and the theme.
  *
  * # Returns
  *
@@ -112,8 +110,7 @@ fn draw_list(frame: &mut Frame, area: Rect, app: &App) {
  *
  * * `frame` (`&mut Frame`) - The terminal frame the footer is rendered into.
  * * `area` (`Rect`) - The region reserved for the footer.
- * * `app` (`&App`) - The application state supplying the presets, the cursor,
- *   the preset context and the theme.
+ * * `app` (`&App`) - The application state supplying the presets, the cursor, the preset context and the theme.
  *
  * # Returns
  *

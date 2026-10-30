@@ -207,8 +207,7 @@ impl fmt::Display for RiskLevel {
  * # Fields
  *
  * * `level` (`RiskLevel`) - The assessed severity.
- * * `reasons` (`Vec<String>`) - Plain-English reasons for the level, in the
- *   order they were discovered.
+ * * `reasons` (`Vec<String>`) - Plain-English reasons for the level, in the order they were discovered.
  */
 pub struct Assessment {
     pub level: RiskLevel,
@@ -299,8 +298,7 @@ fn is_single_host(net: &IpNet) -> bool {
  * # Arguments
  *
  * * `rule` (`&Rule`) - The rule whose destination ports are inspected.
- * * `profiles` (`&[AppProfile]`) - Application profiles used to resolve
- *   profile-based rules.
+ * * `profiles` (`&[AppProfile]`) - Application profiles used to resolve profile-based rules.
  *
  * # Returns
  *
@@ -345,8 +343,7 @@ fn sensitive_ports_of(rule: &Rule, profiles: &[AppProfile]) -> Vec<u16> {
  * # Arguments
  *
  * * `rule` (`&Rule`) - The rule to assess.
- * * `profiles` (`&[AppProfile]`) - Application profiles used to resolve
- *   profile-based rules.
+ * * `profiles` (`&[AppProfile]`) - Application profiles used to resolve profile-based rules.
  *
  * # Returns
  *
@@ -479,8 +476,7 @@ pub enum Fix {
  * * `state` (`&FirewallState`) - The firewall state to assess.
  * * `listening` (`&[Listening]`) - The listening sockets found on the machine.
  * * `ssh_port` (`Option<u16>`) - The SSH port to check, when known.
- * * `profiles` (`&[AppProfile]`) - Application profiles used to resolve
- *   profile-based rules.
+ * * `profiles` (`&[AppProfile]`) - Application profiles used to resolve profile-based rules.
  *
  * # Returns
  *
@@ -612,8 +608,7 @@ pub fn assess_state(
  * # Arguments
  *
  * * `rules` (`&[Rule]`) - The rule set to inspect, in evaluation order.
- * * `profiles` (`&[AppProfile]`) - Application profiles used to resolve
- *   profile-based rules.
+ * * `profiles` (`&[AppProfile]`) - Application profiles used to resolve profile-based rules.
  *
  * # Returns
  *
@@ -651,8 +646,7 @@ pub fn find_shadowed(rules: &[Rule], profiles: &[AppProfile]) -> Vec<(u32, u32)>
  * # Arguments
  *
  * * `spec` (`&PortSpec`) - The port selection to expand.
- * * `profiles` (`&[AppProfile]`) - Application profiles used to resolve
- *   profile-based selections.
+ * * `profiles` (`&[AppProfile]`) - Application profiles used to resolve profile-based selections.
  *
  * # Returns
  *
@@ -692,8 +686,7 @@ fn port_ranges(
  * # Arguments
  *
  * * `rule` (`&Rule`) - The rule to inspect.
- * * `profiles` (`&[AppProfile]`) - Application profiles used to resolve
- *   profile-based rules.
+ * * `profiles` (`&[AppProfile]`) - Application profiles used to resolve profile-based rules.
  *
  * # Returns
  *
@@ -734,8 +727,7 @@ fn exposure(
  *
  * * `broad` (`&Rule`) - The earlier, potentially broader rule.
  * * `narrow` (`&Rule`) - The later rule that may be shadowed.
- * * `profiles` (`&[AppProfile]`) - Application profiles used to resolve
- *   profile-based rules.
+ * * `profiles` (`&[AppProfile]`) - Application profiles used to resolve profile-based rules.
  *
  * # Returns
  *

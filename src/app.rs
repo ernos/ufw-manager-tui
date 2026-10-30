@@ -121,8 +121,7 @@ impl Tab {
      *
      * # Returns
      *
-     * `usize` - The zero-based index of the tab, or `0` if it is somehow absent
-     * from [`Tab::ALL`].
+     * `usize` - The zero-based index of the tab, or `0` if it is somehow absent from [`Tab::ALL`].
      */
     pub fn index(self) -> usize {
         Tab::ALL.iter().position(|t| *t == self).unwrap_or(0)
@@ -139,9 +138,7 @@ impl Tab {
      * * `digit` (`char`) - The character the user typed.
      *
      * # Returns
-     *
-     * `Option<Tab>` - The matching tab, or `None` when the character is not a
-     * digit or is out of range.
+     * `Option<Tab>` - The matching tab, or `None` when the character is not a digit or is out of range.
      */
     pub fn from_digit(digit: char) -> Option<Tab> {
         let index = digit.to_digit(10)?;
@@ -266,8 +263,7 @@ pub enum InputField {
  * * `cursor` (`usize`) - The selected option on the current step.
  * * `input` (`Option<(InputField, TextInput)>`) - The open text field, if any.
  * * `error` (`Option<String>`) - The last validation error to display.
- * * `editing` (`Option<u32>`) - The rule number being edited, or `None` when
- *   adding.
+ * * `editing` (`Option<u32>`) - The rule number being edited, or `None` when adding.
  * * `trace` (`Option<Trace>`) - The result of testing the draft, if tested.
  */
 pub struct Wizard {
@@ -466,8 +462,7 @@ pub enum Modal {
  *
  * # Variants
  *
- * * `Write(Box<(Change, PendingChange)>)` - Retry a change that could not be
- *   written once privileges are granted.
+ * * `Write(Box<(Change, PendingChange)>)` - Retry a change that could not be written once privileges are granted.
  * * `Privileges` - Just gain privileges so the rules become visible.
  */
 pub enum Escalation {
@@ -482,8 +477,7 @@ pub enum Escalation {
  *
  * # Fields
  *
- * * `journal_path` (`Option<std::path::PathBuf>`) - Where the undo journal is
- *   stored; `None` keeps it in memory only.
+ * * `journal_path` (`Option<std::path::PathBuf>`) - Where the undo journal is stored; `None` keeps it in memory only.
  * * `yes` (`bool`) - Skip the confirmation dialog.
  * * `readonly` (`bool`) - Refuse all writes.
  * * `theme` (`Theme`) - The colour theme to use.
@@ -3248,10 +3242,8 @@ fn needs_watchdog(change: &Change) -> bool {
  *
  * # Arguments
  *
- * * `change` (`&Change`) - The change being confirmed; its steps decide the
- *   verb used for rule changes.
- * * `pending` (`&PendingChange`) - The metadata that may carry a draft or a
- *   rule to explain.
+ * * `change` (`&Change`) - The change being confirmed; its steps decide the verb used for rule changes.
+ * * `pending` (`&PendingChange`) - The metadata that may carry a draft or a rule to explain.
  *
  * # Returns
  *

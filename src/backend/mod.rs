@@ -77,8 +77,7 @@ impl From<std::io::Error> for BackendError {
  *
  * # Fields
  *
- * * `argv` (`Vec<String>`) - The argument vector that was run, without the
- *   program name.
+ * * `argv` (`Vec<String>`) - The argument vector that was run, without the program name.
  * * `success` (`bool`) - Whether the command exited successfully.
  * * `stdout` (`String`) - Captured standard output.
  * * `stderr` (`String`) - Captured standard error.

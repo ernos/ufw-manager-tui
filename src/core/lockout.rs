@@ -115,10 +115,8 @@ pub enum ChangeKind {
  * * `kind` (`ChangeKind`) - Which operation is about to run.
  * * `description` (`String`) - The plain-English description shown to the user.
  * * `rule` (`Option<Rule>`) - The existing rule being deleted, edited or moved.
- * * `draft` (`Option<RuleDraft>`) - The rule being added or the replacement being edited
- *   in.
- * * `forced` (`bool`) - `true` when the user has explicitly opted into dangerous
- *   operations.
+ * * `draft` (`Option<RuleDraft>`) - The rule being added or the replacement being edited in.
+ * * `forced` (`bool`) - `true` when the user has explicitly opted into dangerous operations.
  */
 pub struct PendingChange {
     pub kind: ChangeKind,
@@ -254,8 +252,7 @@ impl GuardVerdict {
  *
  * * `session` (`&Session`) - Who is driving and from where.
  * * `pending` (`&PendingChange`) - The change about to run.
- * * `state` (`&FirewallState`) - The current firewall state, used to look for a rule
- *   that keeps the session alive.
+ * * `state` (`&FirewallState`) - The current firewall state, used to look for a rule that keeps the session alive.
  *
  * # Returns
  *

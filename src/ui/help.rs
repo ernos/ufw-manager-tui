@@ -20,8 +20,7 @@ use crate::app::App;
  *
  * * `frame` (`&mut Frame`) - The terminal frame the help text is rendered into.
  * * `area` (`Rect`) - The region reserved for the Help tab.
- * * `app` (`&App`) - The application state supplying the help text, the theme
- *   and the scroll offset.
+ * * `app` (`&App`) - The application state supplying the help text, the theme and the scroll offset.
  *
  * # Returns
  *

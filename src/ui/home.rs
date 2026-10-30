@@ -22,8 +22,7 @@ use crate::core::risk::{assess_rule, RiskLevel};
  *
  * * `frame` (`&mut Frame`) - The terminal frame the widgets are rendered into.
  * * `area` (`Rect`) - The screen region reserved for the Home tab.
- * * `app` (`&App`) - The application state supplying the firewall state,
- *   suggestions, listening sockets, theme and selection.
+ * * `app` (`&App`) - The application state supplying the firewall state, suggestions, listening sockets, theme and selection.
  *
  * # Returns
  *
@@ -86,8 +85,7 @@ fn kv<'a>(label: &'a str, value: String, style: Style) -> Line<'a> {
  *
  * * `frame` (`&mut Frame`) - The terminal frame the summary is rendered into.
  * * `area` (`Rect`) - The region reserved for the summary.
- * * `app` (`&App`) - The application state supplying the firewall state, the
- *   SSH port, the counters and the theme.
+ * * `app` (`&App`) - The application state supplying the firewall state, the SSH port, the counters and the theme.
  *
  * # Returns
  *
@@ -220,8 +218,7 @@ fn draw_summary(frame: &mut Frame, area: Rect, app: &App) {
  *
  * * `frame` (`&mut Frame`) - The terminal frame the suggestions are rendered into.
  * * `area` (`Rect`) - The region reserved for the suggestions panel.
- * * `app` (`&App`) - The application state supplying the suggestions, the
- *   cursor and the theme.
+ * * `app` (`&App`) - The application state supplying the suggestions, the cursor and the theme.
  *
  * # Returns
  *
@@ -286,8 +283,7 @@ fn draw_suggestions(frame: &mut Frame, area: Rect, app: &App) {
  *
  * * `frame` (`&mut Frame`) - The terminal frame the table is rendered into.
  * * `area` (`Rect`) - The region reserved for the services table.
- * * `app` (`&App`) - The application state supplying the listening sockets, the
- *   firewall state, the profiles and the theme.
+ * * `app` (`&App`) - The application state supplying the listening sockets, the firewall state, the profiles and the theme.
  *
  * # Returns
  *

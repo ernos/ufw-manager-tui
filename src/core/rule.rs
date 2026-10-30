@@ -447,8 +447,7 @@ impl FromStr for Protocol {
  * # Fields
  *
  * * `start` (`u16`) - The first port in the range.
- * * `end` (`u16`) - The last port in the range; equal to `start` for a single
- *   port.
+ * * `end` (`u16`) - The last port in the range; equal to `start` for a single port.
  */
 pub struct PortRange {
     pub start: u16,
@@ -813,8 +812,7 @@ impl FromStr for PortSpec {
  *
  * # Fields
  *
- * * `addr` (`Option<String>`) - The address or network; `None` means "any
- *   address".
+ * * `addr` (`Option<String>`) - The address or network; `None` means "any address".
  * * `port` (`PortSpec`) - The port selection for this side.
  */
 pub struct Endpoint {
@@ -944,8 +942,7 @@ impl Endpoint {
  *
  * # Arguments
  *
- * * `value` (`&str`) - The text to parse, such as `1.2.3.4`, `1.2.3.0/24` or
- *   `2001:db8::/32`.
+ * * `value` (`&str`) - The text to parse, such as `1.2.3.4`, `1.2.3.0/24` or `2001:db8::/32`.
  *
  * # Returns
  *
@@ -1023,9 +1020,7 @@ impl LogMode {
  *
  * # Fields
  *
- * * `number` (`u32`) - `ufw`'s own rule number, i.e. the `N` in
- *   `ufw delete N`. `0` marks a rule that does not exist yet (a pending draft
- *   shown in the simulator).
+ * * `number` (`u32`) - `ufw`'s own rule number, i.e. the `N` in `ufw delete N`. `0` marks a rule that does not exist yet (a pending draft shown in the simulator).
  * * `action` (`Action`) - What happens to matching traffic.
  * * `direction` (`Direction`) - Which way the traffic flows.
  * * `interface_in` (`Option<String>`) - The incoming interface, when limited.
@@ -1036,8 +1031,7 @@ impl LogMode {
  * * `log` (`LogMode`) - How much of the rule's traffic is logged.
  * * `comment` (`Option<String>`) - The user's note for the rule.
  * * `v6` (`bool`) - Whether this is the IPv6 variant of the rule.
- * * `route` (`bool`) - Whether this is a forwarding rule; shown but not
- *   editable in v1.
+ * * `route` (`bool`) - Whether this is a forwarding rule; shown but not editable in v1.
  */
 pub struct Rule {
     /// `ufw`'s own rule number, i.e. the `N` in `ufw delete N`. `0` marks a rule that does not

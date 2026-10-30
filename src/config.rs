@@ -17,13 +17,11 @@ use serde::{Deserialize, Serialize};
  * # Fields
  *
  * * `theme` (`String`) - `dark`, `light`, `16color` or `mono`.
- * * `confirm_before_apply` (`bool`) - Show the confirmation dialog before
- *   applying a change.
+ * * `confirm_before_apply` (`bool`) - Show the confirmation dialog before applying a change.
  * * `show_counters` (`bool`) - Read per-rule packet counters (needs root).
  * * `counters_refresh_secs` (`u64`) - How often counters are refreshed.
  * * `log_source` (`String`) - `auto`, `file` or `journal`.
- * * `reconcile_seconds` (`u64`) - Seconds to wait for confirmation before
- *   automatically reverting a risky change; `0` disables the watchdog.
+ * * `reconcile_seconds` (`u64`) - Seconds to wait for confirmation before automatically reverting a risky change; `0` disables the watchdog.
  * * `ascii_fallback` (`bool`) - Force ASCII box drawing.
  * * `readonly` (`bool`) - Start in read-only mode even when root.
  */

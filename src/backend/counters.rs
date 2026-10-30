@@ -28,11 +28,9 @@ const OUTPUT_CHAIN: &str = "ufw-user-output";
  * # Fields
  *
  * * `per_rule` (`BTreeMap<u32, u64>`) - Packets matched per ufw rule number.
- * * `chain_totals` (`Vec<(String, u64)>`) - Total packets per ufw chain, useful
- *   even when per-rule alignment fails.
+ * * `chain_totals` (`Vec<(String, u64)>`) - Total packets per ufw chain, useful even when per-rule alignment fails.
  * * `reliable` (`bool`) - `false` means `per_rule` is empty on purpose.
- * * `note` (`String`) - Why the numbers are missing or approximate, shown in the
- *   UI.
+ * * `note` (`String`) - Why the numbers are missing or approximate, shown in the UI.
  */
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct HitCounters {
@@ -119,8 +117,7 @@ impl HitCounters {
  * # Fields
  *
  * * `chain` (`String`) - Name of the nft chain the rule belongs to.
- * * `packets` (`Option<u64>`) - Packet count, or `None` when the rule has no
- *   counter expression.
+ * * `packets` (`Option<u64>`) - Packet count, or `None` when the rule has no counter expression.
  */
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct NftRule {

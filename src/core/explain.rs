@@ -115,10 +115,8 @@ fn is_single_host(net: &IpNet) -> bool {
  *
  * # Arguments
  *
- * * `endpoint` (`&Endpoint`) - The source endpoint to describe. An absent
- *   address means any source.
- * * `iface` (`Option<&str>`) - An optional incoming interface name. `None`
- *   omits interface information.
+ * * `endpoint` (`&Endpoint`) - The source endpoint to describe. An absent address means any source.
+ * * `iface` (`Option<&str>`) - An optional incoming interface name. `None` omits interface information.
  *
  * # Returns
  *
@@ -149,10 +147,8 @@ pub fn describe_source(endpoint: &Endpoint, iface: Option<&str>) -> String {
  *
  * # Arguments
  *
- * * `endpoint` (`&Endpoint`) - The destination endpoint to describe. An absent
- *   address is rendered as "the internet".
- * * `iface` (`Option<&str>`) - An optional outgoing interface name. `None`
- *   omits interface information.
+ * * `endpoint` (`&Endpoint`) - The destination endpoint to describe. An absent address is rendered as "the internet".
+ * * `iface` (`Option<&str>`) - An optional outgoing interface name. `None` omits interface information.
  *
  * # Returns
  *
@@ -178,10 +174,8 @@ fn describe_destination(endpoint: &Endpoint, iface: Option<&str>) -> String {
  *
  * # Arguments
  *
- * * `port` (`&PortSpec`) - The selected ports, application profile, or
- *   any-port selection.
- * * `protocol` (`Protocol`) - The transport protocol to include in the
- *   description.
+ * * `port` (`&PortSpec`) - The selected ports, application profile, or any-port selection.
+ * * `protocol` (`Protocol`) - The transport protocol to include in the description.
  *
  * # Returns
  *

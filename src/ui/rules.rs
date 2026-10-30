@@ -23,8 +23,7 @@ use crate::core::util;
  *
  * * `frame` (`&mut Frame`) - The terminal frame the widgets are rendered into.
  * * `area` (`Rect`) - The screen region reserved for the Rules tab.
- * * `app` (`&App`) - The application state supplying the rules, the filter, the
- *   selection and the theme.
+ * * `app` (`&App`) - The application state supplying the rules, the filter, the selection and the theme.
  *
  * # Returns
  *
@@ -129,8 +128,7 @@ fn from_column(rule: &crate::core::rule::Rule) -> String {
  *
  * * `frame` (`&mut Frame`) - The terminal frame the table is rendered into.
  * * `area` (`Rect`) - The region reserved for the rule table.
- * * `app` (`&App`) - The application state supplying the rules, the filter, the
- *   cursor, the risk assessments, the hit counters and the theme.
+ * * `app` (`&App`) - The application state supplying the rules, the filter, the cursor, the risk assessments, the hit counters and the theme.
  *
  * # Returns
  *
@@ -248,8 +246,7 @@ fn draw_table(frame: &mut Frame, area: Rect, app: &App) {
  *
  * * `frame` (`&mut Frame`) - The terminal frame the detail pane is rendered into.
  * * `area` (`Rect`) - The region reserved for the detail pane.
- * * `app` (`&App`) - The application state supplying the selected rule, the risk
- *   assessment, the shadowing information, the counters and the theme.
+ * * `app` (`&App`) - The application state supplying the selected rule, the risk assessment, the shadowing information, the counters and the theme.
  *
  * # Returns
  *

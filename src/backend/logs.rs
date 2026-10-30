@@ -82,8 +82,7 @@ type Table = HashMap<(IpAddr, u16, String), BlockRow>;
  *
  * # Fields
  *
- * * `table` (`Arc<Mutex<Table>>`) - The aggregation table shared with the reader
- *   thread.
+ * * `table` (`Arc<Mutex<Table>>`) - The aggregation table shared with the reader thread.
  * * `stop` (`Arc<AtomicBool>`) - Flag the reader thread polls; set on drop.
  * * `source` (`String`) - Human-readable name of the log source being read.
  * * `handle` (`Option<JoinHandle<()>>`) - The reader thread, if it was spawned.

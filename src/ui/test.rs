@@ -21,8 +21,7 @@ use crate::core::simulate::StepOwner;
  *
  * * `frame` (`&mut Frame`) - The terminal frame the widgets are rendered into.
  * * `area` (`Rect`) - The screen region reserved for the Test tab.
- * * `app` (`&App`) - The application state supplying the traffic form, the last
- *   trace and the theme.
+ * * `app` (`&App`) - The application state supplying the traffic form, the last trace and the theme.
  *
  * # Returns
  *
@@ -101,8 +100,7 @@ fn input_span(app: &App, index: usize, input: &crate::ui::widgets::TextInput) ->
  *
  * * `frame` (`&mut Frame`) - The terminal frame the form is rendered into.
  * * `area` (`Rect`) - The region reserved for the form.
- * * `app` (`&App`) - The application state supplying the traffic form, the LAN
- *   interface and the theme.
+ * * `app` (`&App`) - The application state supplying the traffic form, the LAN interface and the theme.
  *
  * # Returns
  *

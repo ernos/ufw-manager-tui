@@ -27,12 +27,9 @@ use crate::core::rule::{Direction, LogMode, PortSpec, Rule, RuleDraft};
  *
  * # Fields
  *
- * * `description` (`String`) - One line of plain English, e.g. "Allow TCP port 22 from
- *   192.168.1.0/24".
- * * `steps` (`Vec<Vec<String>>`) - The argument vectors to run, in order, to apply the
- *   change.
- * * `inverse` (`Vec<Vec<String>>`) - The argument vectors to run, in order, to undo the
- *   change. Empty when the change cannot be undone.
+ * * `description` (`String`) - One line of plain English, e.g. "Allow TCP port 22 from 192.168.1.0/24".
+ * * `steps` (`Vec<Vec<String>>`) - The argument vectors to run, in order, to apply the change.
+ * * `inverse` (`Vec<Vec<String>>`) - The argument vectors to run, in order, to undo the change. Empty when the change cannot be undone.
  */
 pub struct Change {
     /// One line of plain English, e.g. "Allow TCP port 22 from 192.168.1.0/24".
@@ -157,8 +154,7 @@ pub fn render_command(args: &[String]) -> String {
  * # Arguments
  *
  * * `draft` (`&RuleDraft`) - The rule to render; it is validated before use.
- * * `include_comment` (`bool`) - Whether a non-empty comment is appended as a
- *   `comment <text>` clause.
+ * * `include_comment` (`bool`) - Whether a non-empty comment is appended as a `comment <text>` clause.
  *
  * # Returns
  *

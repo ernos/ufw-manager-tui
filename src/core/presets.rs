@@ -47,8 +47,7 @@ impl LanInfo {
  *
  * # Fields
  *
- * * `lan` (`Option<LanInfo>`) - The detected local network, or `None` when none was
- *   found.
+ * * `lan` (`Option<LanInfo>`) - The detected local network, or `None` when none was found.
  * * `ssh_port` (`u16`) - The port SSH is listening on.
  * * `interfaces` (`Vec<String>`) - The network interfaces present on this machine.
  * * `firewall_enabled` (`bool`) - Whether the firewall is currently on.
@@ -97,8 +96,7 @@ impl Default for PresetContext {
  * # Variants
  *
  * * `TurnOnSafely` - Allow SSH first, then enable the firewall.
- * * `RestrictSshToLan` - Replace the open SSH rule with one limited to the local
- *   network.
+ * * `RestrictSshToLan` - Replace the open SSH rule with one limited to the local network.
  * * `RateLimitSsh` - Allow SSH with rate limiting.
  * * `WebServer` - Allow TCP ports 80 and 443 from anywhere.
  * * `BlockAddress(String)` - Deny all traffic from the given address.
@@ -129,8 +127,7 @@ pub enum Preset {
  * * `title` (`String`) - The card title.
  * * `what` (`String`) - The one-sentence explanation of what the preset changes.
  * * `level` (`RiskLevel`) - The risk level used to colour the card.
- * * `blocked` (`Option<String>`) - `Some` with the reason when the preset cannot run
- *   here; `None` when it can.
+ * * `blocked` (`Option<String>`) - `Some` with the reason when the preset cannot run here; `None` when it can.
  */
 pub struct PresetCard {
     pub preset: Preset,
@@ -377,8 +374,7 @@ impl Preset {
  *
  * # Arguments
  *
- * * `ctx` (`&PresetContext`) - The detected environment used to build and filter the
- *   cards.
+ * * `ctx` (`&PresetContext`) - The detected environment used to build and filter the cards.
  *
  * # Returns
  *

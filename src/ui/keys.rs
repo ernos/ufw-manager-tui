@@ -13,8 +13,7 @@ use crate::app::Tab;
  *
  * # Fields
  *
- * * `keys` (`&'static str`) - The key or combination as it should be shown,
- *   for example `"ENTER"` or `"↑↓"`.
+ * * `keys` (`&'static str`) - The key or combination as it should be shown, for example `"ENTER"` or `"↑↓"`.
  * * `label` (`&'static str`) - The short verb phrase describing the action.
  */
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -133,8 +132,7 @@ pub fn hints(tab: Tab) -> &'static [Hint] {
  * # Fields
  *
  * * `title` (`&'static str`) - The heading shown above the entries.
- * * `entries` (`&'static [(&'static str, &'static str)]`) - Pairs of key or
- *   term and its explanation, in display order.
+ * * `entries` (`&'static [(&'static str, &'static str)]`) - Pairs of key or term and its explanation, in display order.
  */
 pub struct HelpSection {
     pub title: &'static str,

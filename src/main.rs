@@ -194,8 +194,7 @@ fn install_panic_hook() {
  *
  * # Arguments
  *
- * * `app` - `App` - The initialized application state. It is taken by value and
- *   mutated in place while the loop runs.
+ * * `app` - `App` - The initialized application state. It is taken by value and mutated in place while the loop runs.
  *
  * # Returns
  *
@@ -260,9 +259,7 @@ fn run(mut app: App) -> Result<()> {
  *
  * # Arguments
  *
- * * `flag` - `Arc<AtomicBool>` - Shared quit flag. Each registered signal sets
- *   this flag to `true`; the event loop polls it and breaks on the next
- *   iteration. The `Arc` is cloned for each signal registration.
+ * * `flag` - `Arc<AtomicBool>` - Shared quit flag. Each registered signal sets this flag to `true`; the event loop polls it and breaks on the next iteration. The `Arc` is cloned for each signal registration.
  *
  * # Returns
  *
@@ -284,8 +281,7 @@ fn install_signal_handlers(flag: Arc<AtomicBool>) {
  *
  * # Arguments
  *
- * * `backend` - `&dyn Backend` - The backend used to read the current firewall
- *   state and its display label. The reference is not retained.
+ * * `backend` - `&dyn Backend` - The backend used to read the current firewall state and its display label. The reference is not retained.
  *
  * # Returns
  *

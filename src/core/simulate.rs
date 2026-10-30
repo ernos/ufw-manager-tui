@@ -28,8 +28,7 @@ use crate::core::rule::{Action, Direction, PortSpec, Protocol, Rule, RuleDraft};
  * * `src_port` (`u16`) - The source port.
  * * `dst` (`IpAddr`) - The destination address.
  * * `dst_port` (`u16`) - The destination port.
- * * `established` (`bool`) - Whether the packet belongs to an established
- *   connection.
+ * * `established` (`bool`) - Whether the packet belongs to an established connection.
  * * `loopback` (`bool`) - Whether the packet is loopback traffic.
  */
 pub struct Packet {
@@ -81,10 +80,8 @@ impl Default for Packet {
  *
  * # Variants
  *
- * * `Builtin(&'static str)` - One of ufw's built-in rules, carrying its label;
- *   these never appear in `ufw status`.
- * * `Rule(u32)` - A user rule, carrying its rule number (`0` for a pending
- *   draft).
+ * * `Builtin(&'static str)` - One of ufw's built-in rules, carrying its label; these never appear in `ufw status`.
+ * * `Rule(u32)` - A user rule, carrying its rule number (`0` for a pending draft).
  * * `Default` - The default policy that decided the packet.
  */
 pub enum StepOwner {
@@ -104,8 +101,7 @@ pub enum StepOwner {
  * * `label` (`String`) - The human-readable description of the step.
  * * `action` (`Action`) - The action the step would apply.
  * * `matched` (`bool`) - Whether the step matched the packet.
- * * `shadowed` (`bool`) - True for rules that would have matched but were
- *   never reached.
+ * * `shadowed` (`bool`) - True for rules that would have matched but were never reached.
  */
 pub struct TraceStep {
     pub owner: StepOwner,
@@ -166,8 +162,7 @@ impl Trace {
  * # Arguments
  *
  * * `state` (`&FirewallState`) - The firewall state whose rules are evaluated.
- * * `profiles` (`&[AppProfile]`) - Application profiles used to resolve
- *   profile-based rules.
+ * * `profiles` (`&[AppProfile]`) - Application profiles used to resolve profile-based rules.
  * * `packet` (`&Packet`) - The traffic to evaluate.
  *
  * # Returns
@@ -188,10 +183,8 @@ pub fn simulate(state: &FirewallState, profiles: &[AppProfile], packet: &Packet)
  * # Arguments
  *
  * * `state` (`&FirewallState`) - The firewall state whose rules are evaluated.
- * * `profiles` (`&[AppProfile]`) - Application profiles used to resolve
- *   profile-based rules.
- * * `pending` (`&[RuleDraft]`) - Draft rules to evaluate as if they were
- *   applied, numbered `0`.
+ * * `profiles` (`&[AppProfile]`) - Application profiles used to resolve profile-based rules.
+ * * `pending` (`&[RuleDraft]`) - Draft rules to evaluate as if they were applied, numbered `0`.
  * * `packet` (`&Packet`) - The traffic to evaluate.
  *
  * # Returns
@@ -533,8 +526,7 @@ fn builtin_steps(packet: &Packet) -> Vec<Builtin> {
  * # Arguments
  *
  * * `rule` (`&Rule`) - The rule to test.
- * * `profiles` (`&[AppProfile]`) - Application profiles used to resolve
- *   profile-based ports.
+ * * `profiles` (`&[AppProfile]`) - Application profiles used to resolve profile-based ports.
  * * `packet` (`&Packet`) - The packet to test.
  *
  * # Returns
@@ -579,8 +571,7 @@ pub fn matches_rule(rule: &Rule, profiles: &[AppProfile], packet: &Packet) -> bo
  * # Arguments
  *
  * * `spec` (`&PortSpec`) - The port selection to test.
- * * `profiles` (`&[AppProfile]`) - Application profiles used to resolve
- *   profile-based selections.
+ * * `profiles` (`&[AppProfile]`) - Application profiles used to resolve profile-based selections.
  * * `port` (`u16`) - The port to test.
  * * `protocol` (`&Protocol`) - The protocol to test against the profile.
  *

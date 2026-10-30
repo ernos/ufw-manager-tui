@@ -27,8 +27,7 @@ const DEFAULT_TIMEOUT: Duration = Duration::from_secs(10);
  *
  * # Fields
  *
- * * `program` (`String`) - The ufw executable, overridable with
- *   `UFW_MANAGER_UFW`.
+ * * `program` (`String`) - The ufw executable, overridable with `UFW_MANAGER_UFW`.
  * * `timeout` (`Duration`) - Hard limit for each ufw invocation.
  * * `is_root` (`bool`) - Whether the process started as root.
  * * `readonly` (`bool`) - Whether writes are forbidden by the command line.
@@ -241,8 +240,7 @@ fn current_uid_is_zero() -> bool {
  *
  * # Arguments
  *
- * * `command` (`Command`) - The fully configured command to spawn; its stdout
- *   and stderr must be piped.
+ * * `command` (`Command`) - The fully configured command to spawn; its stdout and stderr must be piped.
  * * `timeout` (`Duration`) - How long to wait before killing the child.
  *
  * # Returns

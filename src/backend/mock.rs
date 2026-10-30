@@ -77,8 +77,7 @@ const DEMO_PROFILES: &[(&str, &str, &str, &str)] = &[
  * # Fields
  *
  * * `state` (`FirewallState`) - The simulated firewall rules and header.
- * * `history` (`Vec<Vec<String>>`) - Every command the app asked the fake
- *   firewall to run, in order.
+ * * `history` (`Vec<Vec<String>>`) - Every command the app asked the fake firewall to run, in order.
  * * `profiles` (`Vec<AppProfile>`) - The demo application profiles.
  * * `listening` (`Vec<Listening>`) - The demo listening sockets.
  */
@@ -98,8 +97,7 @@ struct MockState {
  *
  * # Fields
  *
- * * `inner` (`Mutex<MockState>`) - The simulated state, guarded so the backend
- *   can be shared across threads.
+ * * `inner` (`Mutex<MockState>`) - The simulated state, guarded so the backend can be shared across threads.
  */
 pub struct MockBackend {
     inner: Mutex<MockState>,
@@ -566,8 +564,7 @@ fn apply(state: &mut FirewallState, args: &[String]) {
  *
  * # Arguments
  *
- * * `state` (`&mut FirewallState`) - The state whose rules are renumbered in
- *   place.
+ * * `state` (`&mut FirewallState`) - The state whose rules are renumbered in place.
  *
  * # Returns
  *

@@ -363,10 +363,8 @@ impl fmt::Display for LogLevel {
  * * `default_routed` (`RoutedPolicy`) - The default policy for forwarded traffic.
  * * `new_profiles` (`String`) - The `New profiles:` setting, usually `skip` or `ask`.
  * * `rules` (`Vec<Rule>`) - The parsed rules, in the order `ufw` evaluates them.
- * * `unparsed` (`Vec<String>`) - Rows we could not parse. They keep their number so
- *   deletion stays safe, and they are shown raw rather than silently dropped.
- * * `rules_readable` (`bool`) - `false` when running without root, where `ufw` refuses
- *   to print rules at all.
+ * * `unparsed` (`Vec<String>`) - Rows we could not parse. They keep their number so deletion stays safe, and they are shown raw rather than silently dropped.
+ * * `rules_readable` (`bool`) - `false` when running without root, where `ufw` refuses to print rules at all.
  */
 pub struct FirewallState {
     pub enabled: bool,

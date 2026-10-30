@@ -22,8 +22,7 @@ use crate::core::risk::RiskLevel;
  *
  * * `frame` (`&mut Frame`) - The terminal frame the widgets are rendered into.
  * * `area` (`Rect`) - The screen region reserved for the Add tab.
- * * `app` (`&App`) - The application state supplying the wizard state, the
- *   draft, the profiles and the theme.
+ * * `app` (`&App`) - The application state supplying the wizard state, the draft, the profiles and the theme.
  *
  * # Returns
  *
@@ -69,8 +68,7 @@ pub fn draw(frame: &mut Frame, area: Rect, app: &App) {
  *
  * * `frame` (`&mut Frame`) - The terminal frame the breadcrumb is rendered into.
  * * `area` (`Rect`) - The single-row region reserved for the breadcrumb.
- * * `app` (`&App`) - The application state supplying the wizard step, the rule
- *   being edited and the theme.
+ * * `app` (`&App`) - The application state supplying the wizard step, the rule being edited and the theme.
  *
  * # Returns
  *
@@ -116,8 +114,7 @@ fn draw_breadcrumb(frame: &mut Frame, area: Rect, app: &App) {
  *
  * * `frame` (`&mut Frame`) - The terminal frame the options are rendered into.
  * * `area` (`Rect`) - The region reserved for the option list.
- * * `app` (`&App`) - The application state supplying the wizard step, the
- *   options, the selection, the error and the theme.
+ * * `app` (`&App`) - The application state supplying the wizard step, the options, the selection, the error and the theme.
  *
  * # Returns
  *
@@ -179,8 +176,7 @@ fn draw_options(frame: &mut Frame, area: Rect, app: &App) {
  *
  * * `frame` (`&mut Frame`) - The terminal frame the preview is rendered into.
  * * `area` (`Rect`) - The region reserved for the preview.
- * * `app` (`&App`) - The application state supplying the wizard step, the draft,
- *   the trace, the profiles and the theme.
+ * * `app` (`&App`) - The application state supplying the wizard step, the draft, the trace, the profiles and the theme.
  *
  * # Returns
  *
