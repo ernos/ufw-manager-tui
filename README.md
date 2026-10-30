@@ -3,18 +3,7 @@
 A friendly terminal UI for the `ufw` firewall, built for people who are new to Linux and do not want to
 lock themselves out of their own machine.
 
-```
-┌ Rules in ufw's evaluation order (6) ─────────────────────────────────────────────────────────────┐
-│ RULE               DIR  TO              FROM                HITS   NOTE              RISK        │
-│ #1   ALLOW         IN   22/tcp          Anywhere            1.2k   SSH               ✖ critical  │
-│ #2   ALLOW         IN   80,443/tcp      Anywhere            1.2k   web server        ▲ high      │
-│ #3   ALLOW         IN   OpenSSH         192.168.1.0/24      42     home network only ✓ low       │
-│ #4   DENY          IN   3306/tcp        Anywhere            0      mysql             · info      │
-└──────────────────────────────────────────────────────────────────────────────────────────────────┘
-  #1  Allow anyone on the internet to connect to TCP port 22 (SSH) on this machine.
-  ufw allow 22/tcp comment 'SSH'
-  ✖ critical — reachable from the entire internet on remote-access port 22
-```
+![Rules Tab](screenshots/rules.png)
 
 It never invents its own firewall: `ufw` stays the single source of truth. ufw-manager-tui reads it, explains
 it, and only ever writes through it.
@@ -85,6 +74,34 @@ On the Rules tab: `a` add, `e` edit, `d` delete, `y` duplicate, `x` move, `t` te
 | **Activity** | Live blocked packets, and what this session changed |
 | **Presets** | One-key recipes: lock down SSH, run a web server, minimal laptop, … |
 | **Help** | Keys and jargon |
+
+### Home Tab
+
+![Home Tab](screenshots/home.png)
+
+### Rules Tab
+
+![Rules Tab](screenshots/rules.png)
+
+### Add Tab
+
+![Add Tab](screenshots/add.png)
+
+### Test Tab
+
+![Test Tab](screenshots/test.png)
+
+### Activity Tab
+
+![Activity Tab](screenshots/activity.png)
+
+### Presets Tab
+
+![Presets Tab](screenshots/presets.png)
+
+### Help Tab
+
+![Help Tab](screenshots/help.png)
 
 ## Safety model
 
