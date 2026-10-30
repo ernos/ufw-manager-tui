@@ -6,6 +6,7 @@ use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
 use ufw_manager::app::{App, AppOptions, Tab, WizardStep};
 use ufw_manager::backend::mock::MockBackend;
+use ufw_manager::config::Config;
 use ufw_manager::ui::theme::Theme;
 
 /**
@@ -32,6 +33,8 @@ fn app() -> App {
             reconcile_seconds: 0,
             show_counters: true,
             confirm_before_apply: false,
+            config: Config::default(),
+            config_path: None,
         },
     )
 }
@@ -364,7 +367,7 @@ fn tabs_cycle_in_both_directions() {
     assert_eq!(app.tab, Tab::Home);
     // Wrapping backwards from the first tab lands on the last.
     press(&mut app, KeyCode::BackTab);
-    assert_eq!(app.tab, Tab::Help);
+    assert_eq!(app.tab, Tab::Settings);
 }
 
 #[test]
@@ -442,6 +445,8 @@ fn read_only_mode_refuses_to_write() {
             reconcile_seconds: 0,
             show_counters: true,
             confirm_before_apply: false,
+            config: Config::default(),
+            config_path: None,
         },
     );
     let before = app.state.rules.len();
@@ -541,6 +546,8 @@ fn app_with_confirmation() -> App {
             reconcile_seconds: 0,
             show_counters: true,
             confirm_before_apply: true,
+            config: Config::default(),
+            config_path: None,
         },
     )
 }
@@ -724,6 +731,8 @@ fn x_asks_for_privileges_when_it_can_and_explains_when_it_cannot() {
             reconcile_seconds: 0,
             show_counters: true,
             confirm_before_apply: false,
+            config: Config::default(),
+            config_path: None,
         },
     );
     press(&mut app, KeyCode::Char('X'));
@@ -746,6 +755,8 @@ fn x_asks_for_privileges_when_it_can_and_explains_when_it_cannot() {
             reconcile_seconds: 0,
             show_counters: true,
             confirm_before_apply: false,
+            config: Config::default(),
+            config_path: None,
         },
     );
     press(&mut app, KeyCode::Char('X'));
@@ -1309,7 +1320,11 @@ fn global_shortcuts_still_work_outside_text_fields_on_the_test_tab() {
     // Field 0 (direction) is a selector, not a text field, so shortcuts stay bound.
     assert_eq!(app.traffic.field, 0);
     press(&mut app, KeyCode::Char('1'));
-    assert_eq!(app.tab, Tab::Home, "tab jump still works outside text input");
+    assert_eq!(
+        app.tab,
+        Tab::Home,
+        "tab jump still works outside text input"
+    );
 }
 
 #[test]
@@ -1341,13 +1356,157 @@ fn wizard_address_input_unbinds_shortcuts() {
     // Select "One specific address or network".
     press(&mut app, KeyCode::Down);
     press(&mut app, KeyCode::Enter);
-    assert!(app.wizard.input.is_some(), "the address field should be open");
+    assert!(
+        app.wizard.input.is_some(),
+        "the address field should be open"
+    );
 
     // 'q' and '1' must be inserted, not trigger quit / tab jump.
     press(&mut app, KeyCode::Char('q'));
     press(&mut app, KeyCode::Char('1'));
-    assert!(!app.should_quit, "'q' must be inserted into the address field");
+    assert!(
+        !app.should_quit,
+        "'q' must be inserted into the address field"
+    );
     let (_, input) = app.wizard.input.as_ref().expect("still editing");
     assert!(input.value().contains('q'));
     assert!(input.value().contains('1'));
+}
+
+#[test]
+/**
+ * Verifies that the Settings tab is reachable by number key and that toggling
+ * the skip-wizard checkbox flips the flag.
+ *
+ * # Arguments
+ *
+ * This function takes no arguments.
+ *
+ * # Returns
+ *
+ * `()` - This function returns no value.
+ *
+ * # Panics
+ *
+ * Panics if the tab is not Settings or the flag does not flip.
+ */
+fn settings_tab_toggles_skip_wizard() {
+    let mut app = app();
+    press(&mut app, KeyCode::Char('8'));
+    assert_eq!(app.tab, Tab::Settings);
+    assert!(!app.skip_wizard);
+
+    // Move to the last row (the checkbox) and press Space.
+    for _ in 0..7 {
+        press(&mut app, KeyCode::Down);
+    }
+    press(&mut app, KeyCode::Char(' '));
+    assert!(app.skip_wizard);
+    assert!(app.config.skip_wizard);
+}
+
+#[test]
+/**
+ * Verifies that cycling the default action on the Settings tab changes the
+ * config and that a new rule starts from the configured defaults.
+ *
+ * # Arguments
+ *
+ * This function takes no arguments.
+ *
+ * # Returns
+ *
+ * `()` - This function returns no value.
+ *
+ * # Panics
+ *
+ * Panics if the action does not cycle or the new draft ignores the defaults.
+ */
+fn settings_defaults_are_used_for_new_rules() {
+    let mut app = app();
+    app.tab = Tab::Settings;
+    // Row 0 is Action; Enter cycles allow -> deny.
+    press(&mut app, KeyCode::Enter);
+    assert_eq!(app.config.defaults.action, "deny");
+
+    // Row 1 is Direction; Enter cycles in -> out.
+    press(&mut app, KeyCode::Down);
+    press(&mut app, KeyCode::Enter);
+    assert_eq!(app.config.defaults.direction, "out");
+
+    app.start_add();
+    assert_eq!(app.tab, Tab::Add);
+    assert_eq!(app.wizard.draft.action.ufw(), "deny");
+    assert_eq!(app.wizard.draft.direction.label(), "OUT");
+}
+
+#[test]
+/**
+ * Verifies that with skip-wizard enabled, adding a rule opens the wizard on the
+ * advanced step.
+ *
+ * # Arguments
+ *
+ * This function takes no arguments.
+ *
+ * # Returns
+ *
+ * `()` - This function returns no value.
+ *
+ * # Panics
+ *
+ * Panics if the wizard does not open on the advanced step.
+ */
+fn skip_wizard_opens_the_advanced_step() {
+    let mut app = app();
+    app.skip_wizard = true;
+    app.config.skip_wizard = true;
+    app.start_add();
+    assert_eq!(app.tab, Tab::Add);
+    assert_eq!(app.wizard.step, WizardStep::Advanced);
+}
+
+#[test]
+/**
+ * Verifies that typing into a settings text field commits the value and that
+ * global shortcuts stay unbound while the field is open.
+ *
+ * # Arguments
+ *
+ * This function takes no arguments.
+ *
+ * # Returns
+ *
+ * `()` - This function returns no value.
+ *
+ * # Panics
+ *
+ * Panics if the value is not committed or a shortcut fires while typing.
+ */
+fn settings_text_input_commits_the_value() {
+    let mut app = app();
+    app.tab = Tab::Settings;
+    // Row 2 is Interface; Enter opens the text input.
+    press(&mut app, KeyCode::Down);
+    press(&mut app, KeyCode::Down);
+    press(&mut app, KeyCode::Enter);
+    assert!(
+        app.settings_input.is_some(),
+        "the interface field should open"
+    );
+
+    // 'q' and '1' must be inserted, not trigger quit / tab jump.
+    press(&mut app, KeyCode::Char('q'));
+    press(&mut app, KeyCode::Char('1'));
+    assert!(
+        !app.should_quit,
+        "'q' must be inserted into the settings field"
+    );
+    let (_, input) = app.settings_input.as_ref().expect("still editing");
+    assert!(input.value().contains('q'));
+    assert!(input.value().contains('1'));
+
+    press(&mut app, KeyCode::Enter);
+    assert!(app.settings_input.is_none());
+    assert_eq!(app.config.defaults.interface, "q1");
 }

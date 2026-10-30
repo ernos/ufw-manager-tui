@@ -188,7 +188,7 @@ No async runtime. Threads are simpler here and there is no meaningful concurrenc
 
 ## 5. Information architecture
 
-Seven top-level tabs. `Tab`/`Shift+Tab` cycles, `1`–`7` jumps directly. The tab bar is always visible with
+Eight top-level tabs. `Tab`/`Shift+Tab` cycles, `1`–`8` jumps directly. The tab bar is always visible with
 the active tab highlighted; a one-line description of the current tab sits under it.
 
 | # | Tab | Purpose |
@@ -200,6 +200,7 @@ the active tab highlighted; a one-line description of the current tab sits under
 | 5 | **Activity** | What is being blocked right now, and what did I just change? |
 | 6 | **Presets** | Curated hardening recipes, one screen, one key. |
 | 7 | **Help** | Keymap + glossary (`port`, `CIDR`, `ALLOW IN`, `LIMIT`, ...). |
+| 8 | **Settings** | Defaults for new rules, and whether the wizard is skipped. |
 
 Modals overlay any tab: **Add/Edit wizard**, **Confirm command**, **Delete confirm**, **Lockout warning**,
 **Error**, **Undo confirm**, **Watchdog countdown**.
@@ -338,6 +339,10 @@ trace inline. This is the feature that removes the fear of applying a change.
 `A` opens the raw form (action, direction, interface, protocol, port spec, from addr, to addr, log, comment)
 with all fields pre-filled from the wizard. Escape hatch, not the primary path.
 
+When the **Skip wizard** setting (§6.8) is enabled, `a` on the Rules tab opens the wizard directly on the
+Advanced step, pre-filled from the configured defaults, so an experienced user goes straight to the raw form
+and the review screen.
+
 ### 6.4 Test
 
 ```
@@ -414,6 +419,33 @@ Each preset declares its preconditions and is hidden or annotated when not appli
 - **Glossary** — `port`, `TCP vs UDP`, `ALLOW IN vs ALLOW OUT`, `DENY vs REJECT`, `LIMIT`,
   `192.168.0.0/24`, `Anywhere`, `interface`, `rule order`, `default policy`, `application profile`.
 - **What ufw-manager-tui does not do** — explicit, so users know when to look elsewhere.
+
+### 6.8 Settings
+
+The Settings tab (digit `8`) configures the defaults applied to **new** rules and whether the guided
+wizard is skipped. Every change is written to `config.toml` immediately.
+
+```
+  ┌─ DEFAULTS FOR NEW RULES ─────────────────────────────────────────────┐
+  │  ▸ Action            allow                                            │
+  │    Direction         in                                               │
+  │    Interface         any                                              │
+  │    Protocol          any                                              │
+  │    From address      any                                              │
+  │    To address        any                                              │
+  │    Logging           off                                              │
+  │    [ ] Skip wizard (start new rules on Advanced)                      │
+  └───────────────────────────────────────────────────────────────────────┘
+  Changes are saved to config.toml immediately.
+  ENTER / ← → change    SPACE toggle checkbox    ESC cancel
+```
+
+- **Toggle rows** (Action, Direction, Protocol, Logging) cycle to the next value on `ENTER`, `←` or `→`.
+- **Text rows** (Interface, From address, To address) open a text input on `ENTER`; empty or `any` input
+  means "any".
+- **Skip wizard** (`SPACE`) makes `a` on the Rules tab open the wizard directly on the Advanced step,
+  pre-filled from these defaults.
+- Editing or duplicating an existing rule always uses that rule's own values, never these defaults.
 
 ## 7. Rule model
 

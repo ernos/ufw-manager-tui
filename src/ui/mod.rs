@@ -6,6 +6,7 @@ pub mod home;
 pub mod keys;
 pub mod presets;
 pub mod rules;
+pub mod settings;
 pub mod test;
 pub mod theme;
 pub mod widgets;
@@ -87,6 +88,7 @@ pub fn draw(frame: &mut Frame, app: &App) {
         Tab::Activity => activity::draw(frame, body, app),
         Tab::Presets => presets::draw(frame, body, app),
         Tab::Help => help::draw(frame, body, app),
+        Tab::Settings => settings::draw(frame, body, app),
     }
 
     if show_readonly {
@@ -716,6 +718,8 @@ pub(crate) mod tests {
                 reconcile_seconds: 0,
                 show_counters: true,
                 confirm_before_apply: false,
+                config: crate::config::Config::default(),
+                config_path: None,
             },
         )
     }

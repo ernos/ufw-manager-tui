@@ -97,6 +97,13 @@ const HELP_HINTS: &[Hint] = &[
     hint("?", "close"),
 ];
 
+const SETTINGS_HINTS: &[Hint] = &[
+    hint("↑↓", "select"),
+    hint("ENTER", "change"),
+    hint("SPACE", "skip wizard"),
+    hint("?", "help"),
+];
+
 /**
  * Returns the footer hints for a tab, most important first.
  *
@@ -120,6 +127,7 @@ pub fn hints(tab: Tab) -> &'static [Hint] {
         Tab::Activity => ACTIVITY_HINTS,
         Tab::Presets => PRESET_HINTS,
         Tab::Help => HELP_HINTS,
+        Tab::Settings => SETTINGS_HINTS,
     }
 }
 
@@ -143,7 +151,7 @@ pub const GLOBAL: HelpSection = HelpSection {
     title: "Everywhere",
     entries: &[
         ("TAB / SHIFT+TAB", "Next / previous tab"),
-        ("1 … 7", "Jump straight to a tab"),
+        ("1 … 8", "Jump straight to a tab"),
         ("↑ ↓  or  k j", "Move the selection"),
         ("← →  or  h l", "Move between panes"),
         ("ENTER", "Do the obvious thing with the selection"),
@@ -153,7 +161,10 @@ pub const GLOBAL: HelpSection = HelpSection {
         ("u", "Undo the last change"),
         ("?", "This help"),
         ("q", "Quit"),
-        ("type", "While typing a value (e.g. an address) the letter and digit shortcuts are unbound"),
+        (
+            "type",
+            "While typing a value (e.g. an address) the letter and digit shortcuts are unbound",
+        ),
     ],
 };
 
@@ -181,6 +192,16 @@ pub const DIALOGS: HelpSection = HelpSection {
     ],
 };
 
+pub const SETTINGS: HelpSection = HelpSection {
+    title: "Settings",
+    entries: &[
+        ("↑↓", "Select a setting"),
+        ("ENTER / ← →", "Change the selected setting"),
+        ("SPACE", "Toggle the skip-wizard checkbox"),
+        ("type", "Interface and address fields open a text box"),
+    ],
+};
+
 pub const GLOSSARY: HelpSection = HelpSection {
     title: "Plain-English glossary",
     entries: &[
@@ -201,7 +222,7 @@ pub const GLOSSARY: HelpSection = HelpSection {
 /**
  * Returns the help screen's sections in display order.
  *
- * The array is a copy of the four static [`HelpSection`] constants, so the
+ * The array is a copy of the five static [`HelpSection`] constants, so the
  * caller can iterate over them without knowing their names.
  *
  * # Arguments
@@ -210,11 +231,11 @@ pub const GLOSSARY: HelpSection = HelpSection {
  *
  * # Returns
  *
- * A `[HelpSection; 4]` containing the global keys, the Rules keys, the dialog
- * keys and the glossary, in that order.
+ * A `[HelpSection; 5]` containing the global keys, the Rules keys, the dialog
+ * keys, the Settings keys and the glossary, in that order.
  */
-pub fn help_sections() -> [HelpSection; 4] {
-    [GLOBAL, RULES, DIALOGS, GLOSSARY]
+pub fn help_sections() -> [HelpSection; 5] {
+    [GLOBAL, RULES, DIALOGS, SETTINGS, GLOSSARY]
 }
 
 #[cfg(test)]

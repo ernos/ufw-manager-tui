@@ -1,6 +1,11 @@
 
 # CHANGELOG
 
+## Version 0.1.3
+
+- Added a Settings tab (digit `8`) with configurable defaults for new rules: Action, Direction, Interface, Protocol, From address, To address and Logging. Changes are saved to `config.toml` immediately.
+- Added a "Skip wizard" checkbox on the Settings tab: when enabled, adding a rule opens the wizard directly on the Advanced step.
+
 ## Version 0.1.1
 
 - Fixed bug where global shortcuts (`1`-`7` tab jumps, `q`/`r`/`u`/`?` commands) were still active while typing text, so bound keys could not be entered literally. Letter (`a-z`) and digit (`1-9`) shortcuts are now temporarily unbound whenever the app expects a string, such as an address, port, or filter in the Test tab or the wizard.

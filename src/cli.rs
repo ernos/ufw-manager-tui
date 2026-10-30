@@ -152,7 +152,13 @@ mod tests {
      * `()` - This function returns no value; it asserts on the parsed flags.
      */
     fn demo_and_readonly_combine() {
-        let cli = Cli::parse_from(["ufw-manager-tui", "--demo", "--readonly", "--no-color", "-y"]);
+        let cli = Cli::parse_from([
+            "ufw-manager-tui",
+            "--demo",
+            "--readonly",
+            "--no-color",
+            "-y",
+        ]);
         assert!(cli.demo && cli.readonly && cli.no_color && cli.yes);
     }
 

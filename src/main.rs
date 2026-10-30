@@ -88,6 +88,8 @@ fn main() -> Result<()> {
             reconcile_seconds: config.reconcile_seconds,
             show_counters: config.show_counters,
             confirm_before_apply: config.confirm_before_apply,
+            config,
+            config_path: cli.config.clone(),
         },
     );
 

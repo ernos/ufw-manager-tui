@@ -9,6 +9,7 @@ use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
 use crate::backend::logs::BlockMonitor;
 use crate::backend::{Backend, BackendError, BlockRow, CmdOutput, HitCounters};
+use crate::config::Config;
 use crate::core::command::{self, Change};
 use crate::core::explain;
 use crate::core::firewall::{FirewallState, LogLevel, Policy};
@@ -48,10 +49,11 @@ pub enum Tab {
     Activity,
     Presets,
     Help,
+    Settings,
 }
 
 impl Tab {
-    pub const ALL: [Tab; 7] = [
+    pub const ALL: [Tab; 8] = [
         Tab::Home,
         Tab::Rules,
         Tab::Add,
@@ -59,6 +61,7 @@ impl Tab {
         Tab::Activity,
         Tab::Presets,
         Tab::Help,
+        Tab::Settings,
     ];
 
     /**
@@ -83,6 +86,7 @@ impl Tab {
             Tab::Activity => "Activity",
             Tab::Presets => "Presets",
             Tab::Help => "Help",
+            Tab::Settings => "Settings",
         }
     }
 
@@ -109,6 +113,7 @@ impl Tab {
             Tab::Activity => "What is being blocked right now, and what this session changed.",
             Tab::Presets => "One-key recipes for the jobs people actually have.",
             Tab::Help => "Keys, and what the jargon means.",
+            Tab::Settings => "Defaults for new rules, and how the wizard behaves.",
         }
     }
 
@@ -130,7 +135,7 @@ impl Tab {
     /**
      * Maps a typed digit to the tab it selects.
      *
-     * Digits `1` through `7` select the tabs in [`Tab::ALL`] order; `0` and any
+     * Digits `1` through `8` select the tabs in [`Tab::ALL`] order; `0` and any
      * non-digit character select nothing.
      *
      * # Arguments
@@ -248,6 +253,25 @@ pub enum InputField {
     FromPort,
     AdvancedComment,
 }
+
+/**
+ * Identifies which settings row an open text input edits.
+ *
+ * # Variants
+ *
+ * * `Interface` - The default incoming interface.
+ * * `FromAddress` - The default source address or network.
+ * * `ToAddress` - The default destination address or network.
+ */
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SettingsField {
+    Interface,
+    FromAddress,
+    ToAddress,
+}
+
+/// Number of rows on the Settings tab: the seven rule defaults plus the skip-wizard checkbox.
+pub const SETTINGS_ROW_COUNT: usize = 8;
 
 /**
  * State of the guided rule wizard.
@@ -484,6 +508,8 @@ pub enum Escalation {
  * * `reconcile_seconds` (`u64`) - How long the watchdog waits before reverting.
  * * `show_counters` (`bool`) - Whether rule hit counters are displayed.
  * * `confirm_before_apply` (`bool`) - Whether changes need confirmation.
+ * * `config` (`Config`) - The user preferences, edited on the Settings tab.
+ * * `config_path` (`Option<std::path::PathBuf>`) - Where the config is saved; `None` disables persistence.
  */
 pub struct AppOptions {
     /// Where the undo journal lives. `None` keeps it in memory only, which is what tests want.
@@ -494,6 +520,8 @@ pub struct AppOptions {
     pub reconcile_seconds: u64,
     pub show_counters: bool,
     pub confirm_before_apply: bool,
+    pub config: Config,
+    pub config_path: Option<std::path::PathBuf>,
 }
 
 /**
@@ -526,6 +554,7 @@ pub struct AppOptions {
  * * `preset_cursor` (`usize`) - Selected preset on the Presets tab.
  * * `activity_cursor` (`usize`) - Selected row on the Activity tab.
  * * `help_scroll` (`u16`) - Scroll offset on the Help tab.
+ * * `settings_cursor` (`usize`) - Selected row on the Settings tab.
  * * `filter` (`Option<TextInput>`) - The rules filter text, if set.
  * * `filter_open` (`bool`) - Whether the filter is being edited.
  * * `wizard` (`Wizard`) - The Add tab wizard state.
@@ -535,11 +564,15 @@ pub struct AppOptions {
  * * `modal` (`Option<Modal>`) - The modal covering the screen, if any.
  * * `queue` (`VecDeque<Change>`) - Changes waiting to be submitted.
  * * `status` (`Option<StatusMessage>`) - The current status line message.
+ * * `config` (`Config`) - The user preferences, edited on the Settings tab.
+ * * `config_path` (`Option<std::path::PathBuf>`) - Where the config is saved.
+ * * `settings_input` (`Option<(SettingsField, TextInput)>`) - The open settings text field, if any.
  * * `readonly` (`bool`) - Whether writes are refused.
  * * `yes` (`bool`) - Whether confirmation is skipped.
  * * `confirm_before_apply` (`bool`) - Whether changes need confirmation.
  * * `show_counters` (`bool`) - Whether hit counters are displayed.
  * * `reconcile_seconds` (`u64`) - Watchdog delay before reverting.
+ * * `skip_wizard` (`bool`) - Whether new rules start on the advanced step.
  * * `should_quit` (`bool`) - Set when the user asked to exit.
  * * `escalation` (`Option<Escalation>`) - A pending request to run `sudo`.
  * * `watchdog` (`Option<Watchdog>`) - The running revert watchdog, if any.
@@ -571,6 +604,7 @@ pub struct App {
     pub preset_cursor: usize,
     pub activity_cursor: usize,
     pub help_scroll: u16,
+    pub settings_cursor: usize,
 
     pub filter: Option<TextInput>,
     pub filter_open: bool,
@@ -584,11 +618,15 @@ pub struct App {
     pub queue: VecDeque<Change>,
 
     pub status: Option<StatusMessage>,
+    pub config: Config,
+    pub config_path: Option<std::path::PathBuf>,
+    pub settings_input: Option<(SettingsField, TextInput)>,
     pub readonly: bool,
     pub yes: bool,
     pub confirm_before_apply: bool,
     pub show_counters: bool,
     pub reconcile_seconds: u64,
+    pub skip_wizard: bool,
     pub should_quit: bool,
 
     pub escalation: Option<Escalation>,
@@ -712,6 +750,7 @@ impl App {
             preset_cursor: 0,
             activity_cursor: 0,
             help_scroll: 0,
+            settings_cursor: 0,
             filter: None,
             filter_open: false,
             wizard: Wizard::default(),
@@ -721,17 +760,22 @@ impl App {
             modal: None,
             queue: VecDeque::new(),
             status: None,
+            config: options.config,
+            config_path: options.config_path,
+            settings_input: None,
             readonly: options.readonly,
             yes: options.yes,
             confirm_before_apply: options.confirm_before_apply,
             show_counters: options.show_counters,
             reconcile_seconds: options.reconcile_seconds,
+            skip_wizard: false,
             should_quit: false,
             escalation: None,
             watchdog: None,
             paused: false,
             activity_rows: Vec::new(),
         };
+        app.skip_wizard = app.config.skip_wizard;
         app.bootstrap();
         app
     }
@@ -1121,6 +1165,7 @@ impl App {
             Tab::Activity => self.handle_activity_key(key),
             Tab::Presets => self.handle_presets_key(key),
             Tab::Help => self.handle_help_key(key),
+            Tab::Settings => self.handle_settings_key(key),
         }
     }
 
@@ -1142,6 +1187,9 @@ impl App {
      */
     fn in_text_input(&self) -> bool {
         if self.wizard.input.is_some() {
+            return true;
+        }
+        if self.settings_input.is_some() {
             return true;
         }
         if self.tab == Tab::Test && self.traffic.field >= 2 {
@@ -1228,6 +1276,248 @@ impl App {
             }
             KeyCode::Esc => self.tab = Tab::Home,
             _ => {}
+        }
+    }
+
+    // ---------------------------------------------------------------------------------------
+    // Settings
+    // ---------------------------------------------------------------------------------------
+
+    /**
+     * Handles keys on the Settings tab.
+     *
+     * When a text field is open, characters are inserted and Enter submits the
+     * value while Escape cancels. Otherwise navigation keys move the row cursor,
+     * Enter or the arrow keys cycle toggle rows (action, direction, protocol,
+     * logging) or open a text input for the text rows (interface, from address,
+     * to address), and Space flips the skip-wizard checkbox. Every committed
+     * change is saved to the config file immediately.
+     *
+     * # Arguments
+     *
+     * * `&mut self` - The application state being mutated.
+     * * `key` (`KeyEvent`) - The key event to interpret.
+     *
+     * # Returns
+     *
+     * This method returns no value.
+     */
+    fn handle_settings_key(&mut self, key: KeyEvent) {
+        if self.settings_input.is_some() {
+            /**
+             * The result of handling one key press in an open settings text field.
+             *
+             * This is a local helper enum used only inside the settings key handler.
+             *
+             * # Variants
+             *
+             * * `Keep` - Leave the input open and unchanged.
+             * * `Cancel` - Close the input without saving.
+             * * `Submit` - Close the input and commit the typed value.
+             */
+            enum Outcome {
+                Keep,
+                Cancel,
+                Submit(SettingsField, String),
+            }
+            let mut outcome = Outcome::Keep;
+            if let Some((field, input)) = self.settings_input.as_mut() {
+                match key.code {
+                    KeyCode::Esc => outcome = Outcome::Cancel,
+                    KeyCode::Enter => {
+                        outcome = Outcome::Submit(*field, input.value().trim().to_string())
+                    }
+                    KeyCode::Backspace => input.backspace(),
+                    KeyCode::Delete => input.delete(),
+                    KeyCode::Left => input.left(),
+                    KeyCode::Right => input.right(),
+                    KeyCode::Home => input.home(),
+                    KeyCode::End => input.end(),
+                    KeyCode::Char(c) if !c.is_control() => input.insert(c),
+                    _ => {}
+                }
+            }
+            match outcome {
+                Outcome::Keep => {}
+                Outcome::Cancel => self.settings_input = None,
+                Outcome::Submit(field, value) => {
+                    self.settings_input = None;
+                    self.commit_settings_text(field, value);
+                }
+            }
+            return;
+        }
+
+        match key.code {
+            KeyCode::Up
+            | KeyCode::Down
+            | KeyCode::Char('k')
+            | KeyCode::Char('j')
+            | KeyCode::Home
+            | KeyCode::End => {
+                Self::move_cursor(&mut self.settings_cursor, key.code, SETTINGS_ROW_COUNT)
+            }
+            KeyCode::Enter | KeyCode::Right | KeyCode::Char('l') => self.settings_confirm(),
+            KeyCode::Left | KeyCode::Char('h') => self.settings_confirm(),
+            KeyCode::Char(' ') => self.toggle_skip_wizard(),
+            _ => {}
+        }
+    }
+
+    /**
+     * Confirms the selected settings row.
+     *
+     * Toggle rows cycle to the next value; text rows open a text input
+     * pre-filled with the current value; the skip-wizard row flips the checkbox.
+     *
+     * # Arguments
+     *
+     * * `&mut self` - The application state being mutated.
+     *
+     * # Returns
+     *
+     * This method returns no value.
+     */
+    fn settings_confirm(&mut self) {
+        match self.settings_cursor {
+            0 => {
+                let next = match self.config.defaults.action.as_str() {
+                    "allow" => "deny",
+                    "deny" => "reject",
+                    "reject" => "limit",
+                    _ => "allow",
+                };
+                self.config.defaults.action = next.into();
+                self.save_settings("default action");
+            }
+            1 => {
+                self.config.defaults.direction = if self.config.defaults.direction == "out" {
+                    "in".into()
+                } else {
+                    "out".into()
+                };
+                self.save_settings("default direction");
+            }
+            2 => {
+                self.settings_input = Some((
+                    SettingsField::Interface,
+                    TextInput::new(self.config.defaults.interface.clone()),
+                ));
+            }
+            3 => {
+                let next = match self.config.defaults.protocol.as_str() {
+                    "tcp" => "udp",
+                    "udp" => "any",
+                    _ => "tcp",
+                };
+                self.config.defaults.protocol = next.into();
+                self.save_settings("default protocol");
+            }
+            4 => {
+                self.settings_input = Some((
+                    SettingsField::FromAddress,
+                    TextInput::new(self.config.defaults.from_addr.clone()),
+                ));
+            }
+            5 => {
+                self.settings_input = Some((
+                    SettingsField::ToAddress,
+                    TextInput::new(self.config.defaults.to_addr.clone()),
+                ));
+            }
+            6 => {
+                let next = match self.config.defaults.logging.as_str() {
+                    "off" => "log",
+                    "log" => "log-all",
+                    _ => "off",
+                };
+                self.config.defaults.logging = next.into();
+                self.save_settings("default logging");
+            }
+            _ => self.toggle_skip_wizard(),
+        }
+    }
+
+    /**
+     * Stores a value typed into a settings text field.
+     *
+     * The field decides where the value goes; empty or `any` input clears the
+     * value so the rule falls back to "any".
+     *
+     * # Arguments
+     *
+     * * `&mut self` - The application state being mutated.
+     * * `field` (`SettingsField`) - Which default the value belongs to.
+     * * `value` (`String`) - The trimmed text the user submitted.
+     *
+     * # Returns
+     *
+     * This method returns no value.
+     */
+    fn commit_settings_text(&mut self, field: SettingsField, value: String) {
+        let stored = if value.is_empty() || value == "any" {
+            String::new()
+        } else {
+            value
+        };
+        match field {
+            SettingsField::Interface => {
+                self.config.defaults.interface = stored;
+                self.save_settings("default interface");
+            }
+            SettingsField::FromAddress => {
+                self.config.defaults.from_addr = stored;
+                self.save_settings("default from address");
+            }
+            SettingsField::ToAddress => {
+                self.config.defaults.to_addr = stored;
+                self.save_settings("default to address");
+            }
+        }
+    }
+
+    /**
+     * Flips the skip-wizard checkbox and saves the config.
+     *
+     * # Arguments
+     *
+     * * `&mut self` - The application state being mutated.
+     *
+     * # Returns
+     *
+     * This method returns no value.
+     */
+    fn toggle_skip_wizard(&mut self) {
+        self.skip_wizard = !self.skip_wizard;
+        self.config.skip_wizard = self.skip_wizard;
+        self.save_settings("skip-wizard");
+    }
+
+    /**
+     * Persists the config file and reports the outcome on the status line.
+     *
+     * A missing destination path is not an error (tests run without one); a
+     * write failure sets an error status instead.
+     *
+     * # Arguments
+     *
+     * * `&mut self` - The application state being mutated.
+     * * `what` (`&str`) - A short description of what changed, for the status line.
+     *
+     * # Returns
+     *
+     * This method returns no value.
+     */
+    fn save_settings(&mut self, what: &str) {
+        match &self.config_path {
+            Some(path) => match self.config.save(Some(path)) {
+                Ok(()) => self.set_status(StatusLevel::Good, format!("saved {what}")),
+                Err(error) => self.set_status(
+                    StatusLevel::Error,
+                    format!("could not save {what}: {error}"),
+                ),
+            },
+            None => self.set_status(StatusLevel::Info, format!("{what} set (not persisted)")),
         }
     }
 
@@ -1478,11 +1768,19 @@ impl App {
      */
     pub fn start_add(&mut self) {
         self.wizard.reset();
-        if let Some(lan) = &self.lan {
-            self.wizard.draft.from_addr = Some(lan.cidr());
-            self.wizard.draft.interface_in = Some(lan.iface.clone());
+        let mut draft = self.config.defaults.to_draft();
+        // When the configured defaults leave the source or interface open, fall back to the
+        // detected LAN so the recommended path still pre-fills a sensible source.
+        if draft.from_addr.is_none() && draft.interface_in.is_none() {
+            if let Some(lan) = &self.lan {
+                draft.from_addr = Some(lan.cidr());
+                draft.interface_in = Some(lan.iface.clone());
+            }
         }
-        self.wizard.draft.action = Action::Allow;
+        self.wizard.draft = draft;
+        if self.skip_wizard {
+            self.wizard.step = WizardStep::Advanced;
+        }
         self.tab = Tab::Add;
     }
 
