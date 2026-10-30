@@ -25,26 +25,19 @@ use clap::Parser;
  *
  * # Fields
  *
- * * `demo` (`bool`) - Run against a fake firewall; nothing on the system is
- *   read or changed.
- * * `readonly` (`bool`) - Look but do not touch: never run a command that
- *   changes the firewall.
+ * * `demo` (`bool`) - Run against a fake firewall; nothing on the system is read or changed.
+ * * `readonly` (`bool`) - Look but do not touch: never run a command that changes the firewall.
  * * `no_escalate` (`bool`) - Never invoke sudo to escalate privileges.
- * * `yes` (`bool`) - Skip the confirmation dialog for each change; the dry run
- *   still happens.
+ * * `yes` (`bool`) - Skip the confirmation dialog for each change; the dry run still happens.
  * * `no_color` (`bool`) - Use text risk badges instead of colours.
  * * `ascii` (`bool`) - Force ASCII box drawing.
- * * `theme` (`Option<String>`) - Theme override: `dark`, `light`, `16color` or
- *   `mono`.
- * * `config` (`Option<PathBuf>`) - Explicit configuration file path; defaults
- *   to the XDG config directory.
+ * * `theme` (`Option<String>`) - Theme override: `dark`, `light`, `16color` or `mono`.
+ * * `config` (`Option<PathBuf>`) - Explicit configuration file path; defaults to the XDG config directory.
  * * `debug_log` (`Option<PathBuf>`) - File to write a debug trace to.
  * * `dump_state` (`bool`) - Print the parsed firewall state as JSON and exit.
  * * `ufw` (`Option<String>`) - Override the `ufw` executable, used by tests.
- * * `internal_revert_after` (`Option<u64>`) - Internal watchdog delay in
- *   seconds; set only by the detached helper.
- * * `nonce` (`Option<PathBuf>`) - Internal watchdog state file path; set only
- *   by the detached helper.
+ * * `internal_revert_after` (`Option<u64>`) - Internal watchdog delay in seconds; set only by the detached helper.
+ * * `nonce` (`Option<PathBuf>`) - Internal watchdog state file path; set only by the detached helper.
  */
 pub struct Cli {
     /// Run against a fake firewall. Nothing on the system is read or changed.

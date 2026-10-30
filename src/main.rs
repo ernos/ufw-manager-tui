@@ -211,7 +211,7 @@ fn run(mut app: App) -> Result<()> {
     let quit = Arc::new(AtomicBool::new(false));
     install_signal_handlers(Arc::clone(&quit));
 
-    let guard = TerminalGuard::enter()?;
+    let mut guard = TerminalGuard::enter()?;
     let backend = CrosstermBackend::new(stdout());
     let mut terminal = Terminal::new(backend).context("could not create the terminal")?;
 
@@ -228,7 +228,7 @@ fn run(mut app: App) -> Result<()> {
                 // guard cannot be rebuilt we fall through to the normal shutdown path.
                 restore_terminal();
                 let granted = app.backend.escalate();
-                let _ = TerminalGuard::enter();
+                guard = TerminalGuard::enter()?;
                 terminal.clear()?;
                 let pending = match request {
                     Escalation::Write(pending) => Some(pending),
