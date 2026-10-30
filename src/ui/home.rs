@@ -10,6 +10,25 @@ use crate::app::App;
 use crate::core::firewall::LogLevel;
 use crate::core::risk::{assess_rule, RiskLevel};
 
+/**
+ * Draws the Home tab: the firewall summary, the list of suggested fixes and,
+ * when there is room, the services and exposure table.
+ *
+ * On terminals shorter than 20 rows the services table is omitted so the
+ * summary and suggestions stay readable; otherwise the area is split into
+ * three vertical regions.
+ *
+ * # Arguments
+ *
+ * * `frame` (`&mut Frame`) - The terminal frame the widgets are rendered into.
+ * * `area` (`Rect`) - The screen region reserved for the Home tab.
+ * * `app` (`&App`) - The application state supplying the firewall state,
+ *   suggestions, listening sockets, theme and selection.
+ *
+ * # Returns
+ *
+ * This function returns no value.
+ */
 pub fn draw(frame: &mut Frame, area: Rect, app: &App) {
     if area.height < 20 {
         let rows = Layout::vertical([Constraint::Length(9), Constraint::Min(3)]).split(area);
@@ -28,6 +47,22 @@ pub fn draw(frame: &mut Frame, area: Rect, app: &App) {
     draw_services(frame, rows[2], app);
 }
 
+/**
+ * Builds one "label: value" line for the summary panel.
+ *
+ * The label is padded to a fixed width so the values line up in a column, and
+ * the value is drawn with the supplied style.
+ *
+ * # Arguments
+ *
+ * * `label` (`&'a str`) - The left-hand label, borrowed for the line's lifetime.
+ * * `value` (`String`) - The already-formatted value to display.
+ * * `style` (`Style`) - The style applied to the value.
+ *
+ * # Returns
+ *
+ * A `Line<'a>` containing the styled label and value spans.
+ */
 fn kv<'a>(label: &'a str, value: String, style: Style) -> Line<'a> {
     Line::from(vec![
         Span::styled(
@@ -38,6 +73,26 @@ fn kv<'a>(label: &'a str, value: String, style: Style) -> Line<'a> {
     ])
 }
 
+/**
+ * Draws the firewall summary block.
+ *
+ * Shows whether the firewall is on (or that the rules are hidden without
+ * root), the default incoming, outgoing and routed policies, the log level,
+ * the rule count with how many are open to the internet, the SSH exposure and,
+ * when enabled, the packet-counter note. Risky values are drawn in the
+ * corresponding risk style.
+ *
+ * # Arguments
+ *
+ * * `frame` (`&mut Frame`) - The terminal frame the summary is rendered into.
+ * * `area` (`Rect`) - The region reserved for the summary.
+ * * `app` (`&App`) - The application state supplying the firewall state, the
+ *   SSH port, the counters and the theme.
+ *
+ * # Returns
+ *
+ * This function returns no value.
+ */
 fn draw_summary(frame: &mut Frame, area: Rect, app: &App) {
     let mut lines = Vec::new();
 
@@ -153,6 +208,25 @@ fn draw_summary(frame: &mut Frame, area: Rect, app: &App) {
     frame.render_widget(Paragraph::new(lines), area);
 }
 
+/**
+ * Draws the "What to fix" panel listing the actionable suggestions.
+ *
+ * Each suggestion is prefixed with a risk badge and marked `[FIX]` when the app
+ * can apply it automatically. The selected suggestion is highlighted, and long
+ * text is wrapped to the panel width with continuation lines indented. A
+ * reassuring paragraph is drawn when there is nothing to suggest.
+ *
+ * # Arguments
+ *
+ * * `frame` (`&mut Frame`) - The terminal frame the suggestions are rendered into.
+ * * `area` (`Rect`) - The region reserved for the suggestions panel.
+ * * `app` (`&App`) - The application state supplying the suggestions, the
+ *   cursor and the theme.
+ *
+ * # Returns
+ *
+ * This function returns no value.
+ */
 fn draw_suggestions(frame: &mut Frame, area: Rect, app: &App) {
     let block = app.theme.titled(" What to fix ");
     let inner_width = area.width.saturating_sub(4) as usize;
@@ -199,6 +273,26 @@ fn draw_suggestions(frame: &mut Frame, area: Rect, app: &App) {
     frame.render_widget(Paragraph::new(lines).block(block), area);
 }
 
+/**
+ * Draws the "Services & exposure" table.
+ *
+ * Lists every listening socket that is not bound to loopback, together with the
+ * port, protocol, owning process, where it is reachable from, the matching rule
+ * number and a risk badge. Wildcard sockets are resolved against the rule set
+ * and the default incoming policy. A short paragraph is drawn when nothing is
+ * listening on a network address.
+ *
+ * # Arguments
+ *
+ * * `frame` (`&mut Frame`) - The terminal frame the table is rendered into.
+ * * `area` (`Rect`) - The region reserved for the services table.
+ * * `app` (`&App`) - The application state supplying the listening sockets, the
+ *   firewall state, the profiles and the theme.
+ *
+ * # Returns
+ *
+ * This function returns no value.
+ */
 fn draw_services(frame: &mut Frame, area: Rect, app: &App) {
     let mut rows: Vec<Row> = Vec::new();
 
@@ -289,6 +383,17 @@ mod tests {
     use crate::ui::tests::demo_app;
 
     #[test]
+    /**
+     * Checks that the Home tab renders the firewall summary and the fix panel.
+     *
+     * # Arguments
+     *
+     * This function takes no arguments.
+     *
+     * # Returns
+     *
+     * This function returns no value; it fails the test on missing text.
+     */
     fn home_renders_the_firewall_state() {
         let mut app = demo_app();
         app.tab = Tab::Home;
@@ -298,6 +403,18 @@ mod tests {
     }
 
     #[test]
+    /**
+     * Checks that the demo ruleset yields at least one suggestion, including one
+     * about SSH.
+     *
+     * # Arguments
+     *
+     * This function takes no arguments.
+     *
+     * # Returns
+     *
+     * This function returns no value; it fails the test when no advice is found.
+     */
     fn the_demo_ruleset_produces_actionable_advice() {
         let app = demo_app();
         assert!(!app.suggestions.is_empty());

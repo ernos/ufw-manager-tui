@@ -10,12 +10,50 @@ use crate::app::App;
 use crate::core::risk::RiskLevel;
 use crate::core::util;
 
+/**
+ * Draws the Activity tab: the blocked-traffic table on top and the journal of
+ * this session's changes underneath.
+ *
+ * The area is split vertically into a flexible table region and a fixed
+ * eight-row journal region, and both are rendered into the frame's buffer.
+ *
+ * # Arguments
+ *
+ * * `frame` (`&mut Frame`) - The terminal frame the widgets are rendered into.
+ * * `area` (`Rect`) - The screen region reserved for the Activity tab.
+ * * `app` (`&App`) - The application state supplying the blocked rows, the
+ *   journal, the theme and the current selection.
+ *
+ * # Returns
+ *
+ * This function returns no value.
+ */
 pub fn draw(frame: &mut Frame, area: Rect, app: &App) {
     let rows = Layout::vertical([Constraint::Min(5), Constraint::Length(8)]).split(area);
     draw_blocks(frame, rows[0], app);
     draw_journal(frame, rows[1], app);
 }
 
+/**
+ * Draws the table of recently blocked traffic.
+ *
+ * The panel title reports the log source and whether capture is live or
+ * paused. Each row shows the hit count, age, source, port, protocol,
+ * interface and a short verdict hint, and the selected row is highlighted.
+ * When there are no rows an explanatory paragraph is drawn instead, which
+ * mentions that ufw logging is off when that is the reason.
+ *
+ * # Arguments
+ *
+ * * `frame` (`&mut Frame`) - The terminal frame the table is rendered into.
+ * * `area` (`Rect`) - The region reserved for the blocked-traffic table.
+ * * `app` (`&App`) - The application state supplying the rows, the cursor, the
+ *   theme and the current log level.
+ *
+ * # Returns
+ *
+ * This function returns no value.
+ */
 fn draw_blocks(frame: &mut Frame, area: Rect, app: &App) {
     let title = format!(
         " blocked traffic — {} ({}) ",
@@ -83,6 +121,19 @@ fn draw_blocks(frame: &mut Frame, area: Rect, app: &App) {
     frame.render_widget(table, area);
 }
 
+/**
+ * Returns a short, human-readable guess at what a blocked connection was
+ * trying to do, based on its destination port.
+ *
+ * # Arguments
+ *
+ * * `port` (`u16`) - The destination port of the blocked connection.
+ *
+ * # Returns
+ *
+ * A `String` such as `"SSH probing"` or `"web scanning"`; ports that are not
+ * recognized fall back to `"connection attempt"`.
+ */
 fn verdict_hint(port: u16) -> String {
     match port {
         22 | 2222 => "SSH probing".to_string(),
@@ -95,6 +146,24 @@ fn verdict_hint(port: u16) -> String {
     }
 }
 
+/**
+ * Draws the journal of changes made during this session.
+ *
+ * The panel title shows how many entries exist and reminds the user that `u`
+ * undoes them. Entries are listed newest first, limited to the rows that fit
+ * in `area`, and entries that cannot be undone are annotated in the danger
+ * colour. An explanatory paragraph is drawn when the journal is empty.
+ *
+ * # Arguments
+ *
+ * * `frame` (`&mut Frame`) - The terminal frame the journal is rendered into.
+ * * `area` (`Rect`) - The region reserved for the journal.
+ * * `app` (`&App`) - The application state supplying the journal and the theme.
+ *
+ * # Returns
+ *
+ * This function returns no value.
+ */
 fn draw_journal(frame: &mut Frame, area: Rect, app: &App) {
     let block = app.theme.titled(&format!(
         " what this session changed ({}) — u to undo ",

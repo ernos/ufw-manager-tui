@@ -10,21 +10,51 @@ use crate::core::firewall::Policy;
 use crate::core::risk::RiskLevel;
 use crate::core::rule::{Action, PortSpec, Protocol, RuleDraft};
 
-/// Details about this machine's local network, used to offer "my network only" options.
 #[derive(Debug, Clone, PartialEq, Eq)]
+/**
+ * Details about this machine's local network, used to offer "my network only" options.
+ *
+ * # Fields
+ *
+ * * `iface` (`String`) - The interface the local network is reachable on.
+ * * `net` (`IpNet`) - The local network in CIDR form.
+ */
 pub struct LanInfo {
     pub iface: String,
     pub net: IpNet,
 }
 
 impl LanInfo {
+    /**
+     * Returns the local network in CIDR notation.
+     *
+     * # Arguments
+     *
+     * * `self` (`&self`) - The detected LAN information being read.
+     *
+     * # Returns
+     *
+     * A `String` such as `192.168.1.0/24`.
+     */
     pub fn cidr(&self) -> String {
         self.net.to_string()
     }
 }
 
-/// Everything a preset needs to decide whether it applies and how to build itself.
 #[derive(Debug, Clone)]
+/**
+ * Everything a preset needs to decide whether it applies and how to build itself.
+ *
+ * # Fields
+ *
+ * * `lan` (`Option<LanInfo>`) - The detected local network, or `None` when none was
+ *   found.
+ * * `ssh_port` (`u16`) - The port SSH is listening on.
+ * * `interfaces` (`Vec<String>`) - The network interfaces present on this machine.
+ * * `firewall_enabled` (`bool`) - Whether the firewall is currently on.
+ * * `default_incoming` (`Policy`) - The current default incoming policy.
+ * * `ssh_already_open` (`bool`) - False when a rule already lets SSH in from anywhere.
+ */
 pub struct PresetContext {
     pub lan: Option<LanInfo>,
     pub ssh_port: u16,
@@ -36,6 +66,18 @@ pub struct PresetContext {
 }
 
 impl Default for PresetContext {
+    /**
+     * Implements `Default` for [`PresetContext`] with no detected LAN and SSH on port 22.
+     *
+     * # Arguments
+     *
+     * This method takes no arguments.
+     *
+     * # Returns
+     *
+     * A `PresetContext` with no LAN, no interfaces, the firewall off, deny incoming and
+     * `ssh_already_open` false.
+     */
     fn default() -> Self {
         Self {
             lan: None,
@@ -49,6 +91,22 @@ impl Default for PresetContext {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+/**
+ * A named goal from the recipe library, with a fixed and correct implementation.
+ *
+ * # Variants
+ *
+ * * `TurnOnSafely` - Allow SSH first, then enable the firewall.
+ * * `RestrictSshToLan` - Replace the open SSH rule with one limited to the local
+ *   network.
+ * * `RateLimitSsh` - Allow SSH with rate limiting.
+ * * `WebServer` - Allow TCP ports 80 and 443 from anywhere.
+ * * `BlockAddress(String)` - Deny all traffic from the given address.
+ * * `Minimal` - Deny incoming and allow outgoing.
+ * * `AllowInterface(String)` - Allow all traffic arriving on the given interface.
+ * * `CustomService { port: u16, protocol: Protocol }` - Allow one port and protocol.
+ * * `ResetToDefaults` - Turn the firewall off and delete every rule.
+ */
 pub enum Preset {
     TurnOnSafely,
     RestrictSshToLan,
@@ -61,8 +119,19 @@ pub enum Preset {
     ResetToDefaults,
 }
 
-/// A preset as the UI shows it.
 #[derive(Debug, Clone)]
+/**
+ * A preset as the UI shows it.
+ *
+ * # Fields
+ *
+ * * `preset` (`Preset`) - The preset this card represents.
+ * * `title` (`String`) - The card title.
+ * * `what` (`String`) - The one-sentence explanation of what the preset changes.
+ * * `level` (`RiskLevel`) - The risk level used to colour the card.
+ * * `blocked` (`Option<String>`) - `Some` with the reason when the preset cannot run
+ *   here; `None` when it can.
+ */
 pub struct PresetCard {
     pub preset: Preset,
     pub title: String,
@@ -73,6 +142,18 @@ pub struct PresetCard {
 }
 
 impl Preset {
+    /**
+     * Returns the card title shown in the UI.
+     *
+     * # Arguments
+     *
+     * * `self` (`&self`) - The preset being titled.
+     *
+     * # Returns
+     *
+     * A `String` holding the human-readable title, which includes the interface name or
+     * port for the parameterized presets.
+     */
     pub fn title(&self) -> String {
         match self {
             Preset::TurnOnSafely => "Turn the firewall on, safely".into(),
@@ -89,6 +170,17 @@ impl Preset {
         }
     }
 
+    /**
+     * Returns the one-sentence explanation shown on the card.
+     *
+     * # Arguments
+     *
+     * * `self` (`&self`) - The preset being described.
+     *
+     * # Returns
+     *
+     * A `String` explaining what the preset changes.
+     */
     fn what(&self) -> String {
         match self {
             Preset::TurnOnSafely => {
@@ -115,6 +207,17 @@ impl Preset {
         }
     }
 
+    /**
+     * Returns the risk level assigned to this preset.
+     *
+     * # Arguments
+     *
+     * * `self` (`&self`) - The preset being classified.
+     *
+     * # Returns
+     *
+     * The `RiskLevel` used to colour the card and order the warnings.
+     */
     fn level(&self) -> RiskLevel {
         match self {
             Preset::ResetToDefaults => RiskLevel::Critical,
@@ -127,6 +230,19 @@ impl Preset {
         }
     }
 
+    /**
+     * Builds the changes this preset performs in the given environment.
+     *
+     * # Arguments
+     *
+     * * `self` (`&self`) - The preset being applied.
+     * * `ctx` (`&PresetContext`) - The detected environment the preset adapts to.
+     *
+     * # Returns
+     *
+     * `Result<Vec<Change>, String>` - The ordered changes to apply, or a message explaining
+     * why the preset cannot run here. An empty vector means there is nothing to do.
+     */
     pub fn changes(&self, ctx: &PresetContext) -> Result<Vec<Change>, String> {
         match self {
             Preset::TurnOnSafely => {
@@ -213,7 +329,22 @@ impl Preset {
         }
     }
 
-    /// Builds the card, including whether it can run in this environment.
+    /**
+     * Builds the card, including whether it can run in this environment.
+     *
+     * The card is blocked when the preset needs a detected network that is missing, when
+     * the work is already done, or when [`Preset::changes`] returns an error.
+     *
+     * # Arguments
+     *
+     * * `self` (`&self`) - The preset being presented.
+     * * `ctx` (`&PresetContext`) - The detected environment the preset adapts to.
+     *
+     * # Returns
+     *
+     * A `PresetCard` with the title, explanation, risk level and an optional reason why
+     * the preset cannot run here.
+     */
     pub fn card(&self, ctx: &PresetContext) -> PresetCard {
         let blocked = match self {
             Preset::RestrictSshToLan if ctx.lan.is_none() => {
@@ -238,7 +369,22 @@ impl Preset {
     }
 }
 
-/// The default library, minus the ones that need an argument from the user.
+/**
+ * Returns the default library, minus the ones that need an argument from the user.
+ *
+ * Tunnel interfaces (`wg*`, `tun*`, `tap*`, `tailscale*`) found in the context each add
+ * an `AllowInterface` preset.
+ *
+ * # Arguments
+ *
+ * * `ctx` (`&PresetContext`) - The detected environment used to build and filter the
+ *   cards.
+ *
+ * # Returns
+ *
+ * A `Vec<PresetCard>` in display order, with each card already evaluated for this
+ * environment.
+ */
 pub fn library(ctx: &PresetContext) -> Vec<PresetCard> {
     let mut presets = vec![
         Preset::TurnOnSafely,
@@ -265,6 +411,18 @@ pub fn library(ctx: &PresetContext) -> Vec<PresetCard> {
 mod tests {
     use super::*;
 
+    /**
+     * Builds a preset context with a detected local network.
+     *
+     * # Arguments
+     *
+     * This function takes no arguments.
+     *
+     * # Returns
+     *
+     * A `PresetContext` for `192.168.1.0/24` on `eno1` with the firewall already on and
+     * SSH already allowed.
+     */
     fn ctx_with_lan() -> PresetContext {
         PresetContext {
             lan: Some(LanInfo {
@@ -280,6 +438,17 @@ mod tests {
     }
 
     #[test]
+    /**
+     * Verifies that turning the firewall on safely adds the SSH rule before enabling.
+     *
+     * # Arguments
+     *
+     * This function takes no arguments.
+     *
+     * # Returns
+     *
+     * This function returns no value.
+     */
     fn turning_on_safely_adds_ssh_before_enabling() {
         let ctx = PresetContext {
             firewall_enabled: false,
@@ -293,12 +462,34 @@ mod tests {
     }
 
     #[test]
+    /**
+     * Verifies that turning the firewall on safely does nothing when it is already done.
+     *
+     * # Arguments
+     *
+     * This function takes no arguments.
+     *
+     * # Returns
+     *
+     * This function returns no value.
+     */
     fn turning_on_safely_skips_work_already_done() {
         let ctx = ctx_with_lan();
         assert!(Preset::TurnOnSafely.changes(&ctx).unwrap().is_empty());
     }
 
     #[test]
+    /**
+     * Verifies that restricting SSH uses the detected network and interface.
+     *
+     * # Arguments
+     *
+     * This function takes no arguments.
+     *
+     * # Returns
+     *
+     * This function returns no value.
+     */
     fn restricting_ssh_uses_the_detected_network() {
         let changes = Preset::RestrictSshToLan.changes(&ctx_with_lan()).unwrap();
         let args = &changes[0].steps[0];
@@ -307,6 +498,17 @@ mod tests {
     }
 
     #[test]
+    /**
+     * Verifies that restricting SSH without a detected network fails with a helpful message.
+     *
+     * # Arguments
+     *
+     * This function takes no arguments.
+     *
+     * # Returns
+     *
+     * This function returns no value.
+     */
     fn restricting_ssh_without_a_detected_network_fails_helpfully() {
         let ctx = PresetContext {
             lan: None,
@@ -317,12 +519,34 @@ mod tests {
     }
 
     #[test]
+    /**
+     * Verifies that rate limiting SSH uses the limit action.
+     *
+     * # Arguments
+     *
+     * This function takes no arguments.
+     *
+     * # Returns
+     *
+     * This function returns no value.
+     */
     fn rate_limiting_ssh_uses_the_limit_action() {
         let changes = Preset::RateLimitSsh.changes(&ctx_with_lan()).unwrap();
         assert_eq!(changes[0].steps[0][0], "limit");
     }
 
     #[test]
+    /**
+     * Verifies that the web server preset opens both HTTP and HTTPS.
+     *
+     * # Arguments
+     *
+     * This function takes no arguments.
+     *
+     * # Returns
+     *
+     * This function returns no value.
+     */
     fn the_web_server_preset_opens_both_ports() {
         let changes = Preset::WebServer.changes(&ctx_with_lan()).unwrap();
         assert_eq!(changes.len(), 2);
@@ -331,6 +555,17 @@ mod tests {
     }
 
     #[test]
+    /**
+     * Verifies that blocking an address denies traffic from it.
+     *
+     * # Arguments
+     *
+     * This function takes no arguments.
+     *
+     * # Returns
+     *
+     * This function returns no value.
+     */
     fn blocking_an_address_denies_from_it() {
         let changes = Preset::BlockAddress("203.0.113.7".into())
             .changes(&ctx_with_lan())
@@ -341,6 +576,17 @@ mod tests {
     }
 
     #[test]
+    /**
+     * Verifies that the minimal preset only changes what differs.
+     *
+     * # Arguments
+     *
+     * This function takes no arguments.
+     *
+     * # Returns
+     *
+     * This function returns no value.
+     */
     fn minimal_only_changes_what_differs() {
         let ctx = PresetContext {
             firewall_enabled: true,
@@ -353,6 +599,17 @@ mod tests {
     }
 
     #[test]
+    /**
+     * Verifies that interface presets are only offered for tunnel interfaces.
+     *
+     * # Arguments
+     *
+     * This function takes no arguments.
+     *
+     * # Returns
+     *
+     * This function returns no value.
+     */
     fn interface_presets_are_only_offered_for_tunnels() {
         let cards = library(&ctx_with_lan());
         assert!(cards
@@ -364,6 +621,17 @@ mod tests {
     }
 
     #[test]
+    /**
+     * Verifies that a blocked preset reports its reason.
+     *
+     * # Arguments
+     *
+     * This function takes no arguments.
+     *
+     * # Returns
+     *
+     * This function returns no value.
+     */
     fn blocked_reasons_are_reported_for_the_ui() {
         let ctx = PresetContext {
             lan: None,
@@ -374,6 +642,17 @@ mod tests {
     }
 
     #[test]
+    /**
+     * Verifies that the reset preset is marked critical and has no inverse.
+     *
+     * # Arguments
+     *
+     * This function takes no arguments.
+     *
+     * # Returns
+     *
+     * This function returns no value.
+     */
     fn reset_is_marked_critical() {
         assert_eq!(Preset::ResetToDefaults.level(), RiskLevel::Critical);
         assert!(Preset::ResetToDefaults.changes(&ctx_with_lan()).unwrap()[0]
@@ -382,6 +661,17 @@ mod tests {
     }
 
     #[test]
+    /**
+     * Verifies that a custom service preset respects the protocol.
+     *
+     * # Arguments
+     *
+     * This function takes no arguments.
+     *
+     * # Returns
+     *
+     * This function returns no value.
+     */
     fn custom_service_respects_the_protocol() {
         let preset = Preset::CustomService {
             port: 25565,

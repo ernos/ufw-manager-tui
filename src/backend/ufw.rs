@@ -17,6 +17,29 @@ use crate::core::presets::LanInfo;
 
 const DEFAULT_TIMEOUT: Duration = Duration::from_secs(10);
 
+/**
+ * The real backend: shells out to `ufw` and reads a few world-readable system
+ * files.
+ *
+ * The machine is probed once at construction for the facts the UI needs
+ * everywhere (root-ness, LAN, interfaces, SSH port, profiles), so rendering a
+ * frame never spawns a process.
+ *
+ * # Fields
+ *
+ * * `program` (`String`) - The ufw executable, overridable with
+ *   `UFW_MANAGER_UFW`.
+ * * `timeout` (`Duration`) - Hard limit for each ufw invocation.
+ * * `is_root` (`bool`) - Whether the process started as root.
+ * * `readonly` (`bool`) - Whether writes are forbidden by the command line.
+ * * `no_escalate` (`bool`) - Whether `sudo` prompting is forbidden.
+ * * `ssh_port` (`u16`) - The detected SSH port.
+ * * `session` (`Session`) - The SSH session the UI runs inside, if any.
+ * * `lan` (`Option<LanInfo>`) - The detected local network.
+ * * `interfaces` (`Vec<String>`) - The detected interface names.
+ * * `profiles` (`Vec<AppProfile>`) - The application profiles read at startup.
+ * * `escalated` (`AtomicBool`) - Set once `sudo -v` has succeeded.
+ */
 pub struct UfwCli {
     program: String,
     timeout: Duration,
@@ -32,8 +55,26 @@ pub struct UfwCli {
 }
 
 impl UfwCli {
-    /// Builds the backend, probing the machine once for the facts the UI needs everywhere
-    /// (root-ness, LAN, interfaces, SSH port).
+    /**
+     * Builds the backend, probing the machine once for the facts the UI needs
+     * everywhere (root-ness, LAN, interfaces, SSH port).
+     *
+     * The ufw program comes from `UFW_MANAGER_UFW` when set, otherwise `ufw`.
+     * Profiles are read from `/etc/ufw/applications.d`.
+     *
+     * # Arguments
+     *
+     * * `readonly` (`bool`) - When `true`, writes are refused even as root.
+     * * `no_escalate` (`bool`) - When `true`, `sudo` prompting is never offered.
+     *
+     * # Returns
+     *
+     * `UfwCli` - A backend holding the probed facts and the default timeout.
+     *
+     * # Notes
+     *
+     * Spawns several subprocesses (`id`, `ss`, `ip`) and reads system files.
+     */
     pub fn new(readonly: bool, no_escalate: bool) -> Self {
         let program = std::env::var("UFW_MANAGER_UFW").unwrap_or_else(|_| "ufw".to_string());
         let is_root = current_uid_is_zero();
@@ -65,8 +106,26 @@ impl UfwCli {
         }
     }
 
-    /// Test and diagnostic constructor: talk to `program` instead of `ufw` and skip the root check.
-    /// Used by the integration tests, which drive a fake `ufw` script.
+    /**
+     * Test and diagnostic constructor: talk to `program` instead of `ufw` and
+     * skip the root check.
+     *
+     * Used by the integration tests, which drive a fake `ufw` script.
+     *
+     * # Arguments
+     *
+     * * `program` (`impl Into<String>`) - The executable to invoke instead of
+     *   `ufw`.
+     *
+     * # Returns
+     *
+     * `UfwCli` - A backend that always reports root and never escalates.
+     *
+     * # Notes
+     *
+     * Still probes the machine through [`UfwCli::new`], so it spawns the same
+     * subprocesses.
+     */
     #[doc(hidden)]
     pub fn for_testing(program: impl Into<String>) -> Self {
         let mut cli = Self::new(false, true);
@@ -75,10 +134,43 @@ impl UfwCli {
         cli
     }
 
+    /**
+     * Reports whether commands will run with root privileges.
+     *
+     * # Arguments
+     *
+     * * `self` (`&UfwCli`) - The backend being queried; it is not modified.
+     *
+     * # Returns
+     *
+     * `bool` - `true` when the process is root or `sudo -v` already succeeded.
+     */
     fn privileged(&self) -> bool {
         self.is_root || self.escalated.load(Ordering::Relaxed)
     }
 
+    /**
+     * Runs the configured ufw program with a timeout and the C locale.
+     *
+     * A non-zero exit is still returned as `Ok` so callers can show ufw's own
+     * message; only spawn failures, timeouts and the two recognised ufw
+     * complaints become errors.
+     *
+     * # Arguments
+     *
+     * * `self` (`&UfwCli`) - The backend supplying the program name and timeout;
+     *   it is not modified.
+     * * `args` (`&[String]`) - Arguments passed to ufw.
+     *
+     * # Returns
+     *
+     * `Result<CmdOutput, BackendError>` - The captured output, or `NotRoot`,
+     * `NotFound`, `Timeout` or `Io` when the command could not be run.
+     *
+     * # Notes
+     *
+     * Spawns a subprocess and blocks for up to the configured timeout.
+     */
     fn invoke(&self, args: &[String]) -> Result<CmdOutput, BackendError> {
         let mut command = Command::new(&self.program);
         // ufw's output is translated; every parser here is written for the C locale.
@@ -112,6 +204,22 @@ impl UfwCli {
     }
 }
 
+/**
+ * Checks whether the effective user id is 0 by running `id -u`.
+ *
+ * # Arguments
+ *
+ * This function takes no arguments.
+ *
+ * # Returns
+ *
+ * `bool` - `true` only when `id -u` succeeds and prints `0`; any failure is
+ * treated as "not root".
+ *
+ * # Notes
+ *
+ * Spawns a subprocess; errors are swallowed deliberately.
+ */
 fn current_uid_is_zero() -> bool {
     Command::new("id")
         .arg("-u")
@@ -127,8 +235,26 @@ fn current_uid_is_zero() -> bool {
         .unwrap_or(false)
 }
 
-/// Runs a child process with a hard timeout, draining its pipes on separate threads so a large
-/// output cannot deadlock against the wait loop.
+/**
+ * Runs a child process with a hard timeout, draining its pipes on separate
+ * threads so a large output cannot deadlock against the wait loop.
+ *
+ * # Arguments
+ *
+ * * `command` (`Command`) - The fully configured command to spawn; its stdout
+ *   and stderr must be piped.
+ * * `timeout` (`Duration`) - How long to wait before killing the child.
+ *
+ * # Returns
+ *
+ * `Result<std::process::Output, BackendError>` - The exit status and captured
+ * output, `NotFound` when the program is missing, `Timeout` when it had to be
+ * killed, or `Io` for other spawn/wait failures.
+ *
+ * # Notes
+ *
+ * Spawns a subprocess and two reader threads; the wait loop polls every 20 ms.
+ */
 fn run_with_timeout(
     mut command: Command,
     timeout: Duration,
@@ -190,6 +316,21 @@ fn run_with_timeout(
     })
 }
 
+/**
+ * Recursively reads ufw application profiles from a directory tree.
+ *
+ * Files are parsed with [`crate::core::parse::parse_profile_ini`]; sub-directories
+ * are visited in sorted order so the resulting list is stable.
+ *
+ * # Arguments
+ *
+ * * `dir` (`&Path`) - Directory to scan, normally `/etc/ufw/applications.d`.
+ *
+ * # Returns
+ *
+ * `Vec<AppProfile>` - Every profile found, or an empty vector when the directory
+ * cannot be read.
+ */
 fn read_profiles(dir: &Path) -> Vec<AppProfile> {
     let mut out = Vec::new();
     let Ok(entries) = std::fs::read_dir(dir) else {
@@ -211,6 +352,23 @@ fn read_profiles(dir: &Path) -> Vec<AppProfile> {
     out
 }
 
+/**
+ * Lists listening sockets by running `ss -tulpnH`.
+ *
+ * # Arguments
+ *
+ * This function takes no arguments.
+ *
+ * # Returns
+ *
+ * `Vec<Listening>` - The parsed sockets, or an empty vector when `ss` is missing
+ * or produces nothing.
+ *
+ * # Notes
+ *
+ * Spawns a subprocess. Without root `ss` still lists sockets but cannot name the
+ * owning process.
+ */
 fn read_listening() -> Vec<Listening> {
     // Without root `ss` still lists sockets, it just cannot name the process.
     let output = probe::run("ss", &["-tulpnH"]);
@@ -218,6 +376,23 @@ fn read_listening() -> Vec<Listening> {
 }
 
 impl Backend for UfwCli {
+    /**
+     * Implements [`Backend::label`] by asking ufw for its version string.
+     *
+     * # Arguments
+     *
+     * * `self` (`&UfwCli`) - The backend supplying the program name; it is not
+     *   modified.
+     *
+     * # Returns
+     *
+     * `String` - The first line of `ufw --version`, or `ufw` when the command
+     * fails or prints nothing.
+     *
+     * # Notes
+     *
+     * Spawns a subprocess on every call; failures fall back to a constant.
+     */
     fn label(&self) -> String {
         let version = Command::new(&self.program)
             .arg("--version")
@@ -239,14 +414,53 @@ impl Backend for UfwCli {
         }
     }
 
+    /**
+     * Implements [`Backend::is_root`] from the value probed at construction.
+     *
+     * # Arguments
+     *
+     * * `self` (`&UfwCli`) - The backend being queried; it is not modified.
+     *
+     * # Returns
+     *
+     * `bool` - The cached result of the `id -u` check.
+     */
     fn is_root(&self) -> bool {
         self.is_root
     }
 
+    /**
+     * Implements [`Backend::can_write`] from the read-only flag and privileges.
+     *
+     * # Arguments
+     *
+     * * `self` (`&UfwCli`) - The backend being queried; it is not modified.
+     *
+     * # Returns
+     *
+     * `bool` - `true` when not read-only and either root or already escalated.
+     */
     fn can_write(&self) -> bool {
         !self.readonly && self.privileged()
     }
 
+    /**
+     * Implements [`Backend::read_state`] by running `ufw status numbered` and
+     * `ufw status verbose` and combining the two parses.
+     *
+     * # Arguments
+     *
+     * * `self` (`&UfwCli`) - The backend being read; it is not modified.
+     *
+     * # Returns
+     *
+     * `Result<FirewallState, BackendError>` - The parsed rules and header, or
+     * `NotRoot` when unprivileged and `Failed` when either command fails.
+     *
+     * # Notes
+     *
+     * Spawns two subprocesses.
+     */
     fn read_state(&self) -> Result<FirewallState, BackendError> {
         if !self.privileged() {
             return Err(BackendError::NotRoot(
@@ -272,14 +486,60 @@ impl Backend for UfwCli {
         Ok(parse::combine_rules_and_header(rules, header))
     }
 
+    /**
+     * Implements [`Backend::app_profiles`] from the profiles read at startup.
+     *
+     * # Arguments
+     *
+     * * `self` (`&UfwCli`) - The backend being read; it is not modified.
+     *
+     * # Returns
+     *
+     * `Result<Vec<AppProfile>, BackendError>` - Always `Ok` with a clone of the
+     * cached profiles.
+     */
     fn app_profiles(&self) -> Result<Vec<AppProfile>, BackendError> {
         Ok(self.profiles.clone())
     }
 
+    /**
+     * Implements [`Backend::listening`] by re-running `ss` on each call.
+     *
+     * # Arguments
+     *
+     * * `self` (`&UfwCli`) - The backend being read; it is not modified.
+     *
+     * # Returns
+     *
+     * `Result<Vec<Listening>, BackendError>` - Always `Ok`; a failed `ss` yields
+     * an empty list.
+     *
+     * # Notes
+     *
+     * Spawns a subprocess.
+     */
     fn listening(&self) -> Result<Vec<Listening>, BackendError> {
         Ok(read_listening())
     }
 
+    /**
+     * Implements [`Backend::counters`] by reading `nft -j list ruleset`.
+     *
+     * # Arguments
+     *
+     * * `self` (`&UfwCli`) - The backend being queried; it is not modified.
+     * * `rules` (`&[crate::core::rule::Rule]`) - The rules to align counters
+     *   against, in ufw order.
+     *
+     * # Returns
+     *
+     * `Result<HitCounters, BackendError>` - The aligned counters, an unavailable
+     * set when `nft` needs root, or `Io` when `nft` cannot be spawned.
+     *
+     * # Notes
+     *
+     * Spawns a subprocess.
+     */
     fn counters(&self, rules: &[crate::core::rule::Rule]) -> Result<HitCounters, BackendError> {
         let output = Command::new("nft")
             .args(["-j", "list", "ruleset"])
@@ -297,34 +557,145 @@ impl Backend for UfwCli {
         ))
     }
 
+    /**
+     * Implements [`Backend::run`] by invoking ufw for real.
+     *
+     * # Arguments
+     *
+     * * `self` (`&UfwCli`) - The backend supplying the program and timeout; it is
+     *   not modified.
+     * * `args` (`&[String]`) - Arguments passed to ufw.
+     *
+     * # Returns
+     *
+     * `Result<CmdOutput, BackendError>` - The captured output, or the error from
+     * the private `invoke` helper.
+     *
+     * # Notes
+     *
+     * Spawns a subprocess and blocks until it exits or times out.
+     */
     fn run(&self, args: &[String]) -> Result<CmdOutput, BackendError> {
         self.invoke(args)
     }
 
+    /**
+     * Implements [`Backend::dry_run`] by prefixing `--dry-run` and invoking ufw.
+     *
+     * # Arguments
+     *
+     * * `self` (`&UfwCli`) - The backend supplying the program and timeout; it is
+     *   not modified.
+     * * `args` (`&[String]`) - Arguments passed to ufw after the flag.
+     *
+     * # Returns
+     *
+     * `Result<CmdOutput, BackendError>` - The captured output, or the error from
+     * the private `invoke` helper.
+     *
+     * # Notes
+     *
+     * Spawns a subprocess; ufw validates the command without changing anything.
+     */
     fn dry_run(&self, args: &[String]) -> Result<CmdOutput, BackendError> {
         self.invoke(&with_dry_run(args))
     }
 
+    /**
+     * Implements [`Backend::ssh_port`] from the value probed at construction.
+     *
+     * # Arguments
+     *
+     * * `self` (`&UfwCli`) - The backend being queried; it is not modified.
+     *
+     * # Returns
+     *
+     * `u16` - The cached SSH port.
+     */
     fn ssh_port(&self) -> u16 {
         self.ssh_port
     }
 
+    /**
+     * Implements [`Backend::ssh_session`] from the value probed at construction.
+     *
+     * # Arguments
+     *
+     * * `self` (`&UfwCli`) - The backend being queried; it is not modified.
+     *
+     * # Returns
+     *
+     * `Session` - A clone of the cached session.
+     */
     fn ssh_session(&self) -> Session {
         self.session.clone()
     }
 
+    /**
+     * Implements [`Backend::lan`] from the value probed at construction.
+     *
+     * # Arguments
+     *
+     * * `self` (`&UfwCli`) - The backend being queried; it is not modified.
+     *
+     * # Returns
+     *
+     * `Option<LanInfo>` - A clone of the cached LAN, or `None` when detection
+     * failed.
+     */
     fn lan(&self) -> Option<LanInfo> {
         self.lan.clone()
     }
 
+    /**
+     * Implements [`Backend::interfaces`] from the value probed at construction.
+     *
+     * # Arguments
+     *
+     * * `self` (`&UfwCli`) - The backend being queried; it is not modified.
+     *
+     * # Returns
+     *
+     * `Vec<String>` - A clone of the cached interface names.
+     */
     fn interfaces(&self) -> Vec<String> {
         self.interfaces.clone()
     }
 
+    /**
+     * Implements [`Backend::may_escalate`] from the startup flags.
+     *
+     * # Arguments
+     *
+     * * `self` (`&UfwCli`) - The backend being queried; it is not modified.
+     *
+     * # Returns
+     *
+     * `bool` - `true` only when escalation was not disabled, the process is not
+     * root and the backend is not read-only.
+     */
     fn may_escalate(&self) -> bool {
         !self.no_escalate && !self.is_root && !self.readonly
     }
 
+    /**
+     * Implements [`Backend::escalate`] by running `sudo -v` once.
+     *
+     * # Arguments
+     *
+     * * `self` (`&UfwCli`) - The backend being mutated; the escalated flag is set
+     *   on success.
+     *
+     * # Returns
+     *
+     * `bool` - `true` when privileges are now available, `false` when the user
+     * declined or `sudo` failed.
+     *
+     * # Notes
+     *
+     * Spawns `sudo -v` with inherited stdio, so it needs the real terminal and
+     * the caller must have left raw mode.
+     */
     fn escalate(&self) -> bool {
         if self.escalated.load(Ordering::Relaxed) {
             return true;
@@ -344,6 +715,19 @@ impl Backend for UfwCli {
         }
     }
 
+    /**
+     * Implements [`Backend::log_path`] by testing whether `/var/log/ufw.log` is
+     * readable.
+     *
+     * # Arguments
+     *
+     * * `self` (`&UfwCli`) - The backend being queried; it is not modified.
+     *
+     * # Returns
+     *
+     * `Option<PathBuf>` - The log path when it can be opened, otherwise `None` so
+     * the monitor falls back to the journal.
+     */
     fn log_path(&self) -> Option<PathBuf> {
         let path = PathBuf::from("/var/log/ufw.log");
         if std::fs::File::open(&path).is_ok() {
@@ -359,6 +743,17 @@ mod tests {
     use super::*;
 
     #[test]
+    /**
+     * Verifies that a missing program maps to [`BackendError::NotFound`].
+     *
+     * # Arguments
+     *
+     * This function takes no arguments.
+     *
+     * # Returns
+     *
+     * `()` - This function returns no value; it asserts and panics on failure.
+     */
     fn a_missing_program_reports_not_found() {
         let mut command = Command::new("definitely-not-a-real-binary-xyz");
         command.stdout(Stdio::piped()).stderr(Stdio::piped());
@@ -367,6 +762,17 @@ mod tests {
     }
 
     #[test]
+    /**
+     * Verifies that a slow child is killed and reported as a timeout.
+     *
+     * # Arguments
+     *
+     * This function takes no arguments.
+     *
+     * # Returns
+     *
+     * `()` - This function returns no value; it asserts and panics on failure.
+     */
     fn a_slow_program_is_killed_at_the_timeout() {
         let mut command = Command::new("sleep");
         command
@@ -378,6 +784,17 @@ mod tests {
     }
 
     #[test]
+    /**
+     * Verifies that a fast child's stdout is captured intact.
+     *
+     * # Arguments
+     *
+     * This function takes no arguments.
+     *
+     * # Returns
+     *
+     * `()` - This function returns no value; it asserts and panics on failure.
+     */
     fn a_fast_program_returns_its_output() {
         let mut command = Command::new("echo");
         command
@@ -389,6 +806,17 @@ mod tests {
     }
 
     #[test]
+    /**
+     * Verifies that profiles are read from nested directories.
+     *
+     * # Arguments
+     *
+     * This function takes no arguments.
+     *
+     * # Returns
+     *
+     * `()` - This function returns no value; it asserts and panics on failure.
+     */
     fn profiles_are_read_from_a_directory_tree() {
         let dir = tempfile::tempdir().unwrap();
         std::fs::write(dir.path().join("ssh.profile"), "[OpenSSH]\nports=22/tcp\n").unwrap();
@@ -407,6 +835,17 @@ mod tests {
     }
 
     #[test]
+    /**
+     * Verifies that a missing profiles directory yields an empty list.
+     *
+     * # Arguments
+     *
+     * This function takes no arguments.
+     *
+     * # Returns
+     *
+     * `()` - This function returns no value; it asserts and panics on failure.
+     */
     fn a_missing_profiles_directory_is_not_an_error() {
         assert!(read_profiles(Path::new("/definitely/not/here")).is_empty());
     }

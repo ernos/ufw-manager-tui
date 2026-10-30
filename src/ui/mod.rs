@@ -18,6 +18,25 @@ use ratatui::Frame;
 
 use crate::app::{App, MessageLevel, Modal, StatusLevel, Tab};
 
+/**
+ * Draws the whole application into the frame.
+ *
+ * Lays out the header, tab bar, tab description, the active tab's body, the
+ * optional read-only and watchdog banners, the status line and the footer as
+ * stacked one-row regions, then dispatches the body to the module for the
+ * current tab. Finally the modal dialog, if any, is drawn on top of everything
+ * else. Terminals smaller than 40x12 get an explanation instead of the UI.
+ *
+ * # Arguments
+ *
+ * * `frame` (`&mut Frame`) - The terminal frame everything is rendered into.
+ * * `app` (`&App`) - The application state supplying the tab, theme, status,
+ *   banners, watchdog and modal.
+ *
+ * # Returns
+ *
+ * This function returns no value.
+ */
 pub fn draw(frame: &mut Frame, app: &App) {
     let area = frame.area();
     if area.width < 40 || area.height < 12 {
@@ -89,6 +108,24 @@ pub fn draw(frame: &mut Frame, app: &App) {
     }
 }
 
+/**
+ * Draws the one-line header.
+ *
+ * The left side shows the program name and its version; the right side shows
+ * the hostname, whether the backend is running as root or as a normal user, and
+ * the backend label. The two halves are laid out horizontally in `area`.
+ *
+ * # Arguments
+ *
+ * * `frame` (`&mut Frame`) - The terminal frame the header is rendered into.
+ * * `area` (`Rect`) - The single-row region reserved for the header.
+ * * `app` (`&App`) - The application state supplying the hostname, the backend
+ *   and the theme.
+ *
+ * # Returns
+ *
+ * This function returns no value.
+ */
 fn draw_header(frame: &mut Frame, area: Rect, app: &App) {
     let left = Line::from(vec![
         Span::styled(" ufw-manager-tui", app.theme.title()),
@@ -118,6 +155,23 @@ fn draw_header(frame: &mut Frame, area: Rect, app: &App) {
     );
 }
 
+/**
+ * Draws the tab bar.
+ *
+ * Every tab in [`Tab::ALL`] is rendered as its title surrounded by spaces and
+ * separated by a vertical bar. The active tab uses the selected style and the
+ * others the dimmed style.
+ *
+ * # Arguments
+ *
+ * * `frame` (`&mut Frame`) - The terminal frame the tab bar is rendered into.
+ * * `area` (`Rect`) - The single-row region reserved for the tab bar.
+ * * `app` (`&App`) - The application state supplying the active tab and theme.
+ *
+ * # Returns
+ *
+ * This function returns no value.
+ */
 fn draw_tabs(frame: &mut Frame, area: Rect, app: &App) {
     let mut spans = Vec::new();
     for tab in Tab::ALL {
@@ -133,6 +187,24 @@ fn draw_tabs(frame: &mut Frame, area: Rect, app: &App) {
     frame.render_widget(Paragraph::new(Line::from(spans)), area);
 }
 
+/**
+ * Draws the read-only or hidden-rules banner.
+ *
+ * The text depends on why the app cannot change anything: an explicit
+ * read-only run tells the user to rerun with sudo or press `X` to escalate,
+ * while unreadable rules explain that ufw only shows rules to root.
+ *
+ * # Arguments
+ *
+ * * `frame` (`&mut Frame`) - The terminal frame the banner is rendered into.
+ * * `area` (`Rect`) - The single-row region reserved for the banner.
+ * * `app` (`&App`) - The application state supplying the read-only flag and
+ *   the theme.
+ *
+ * # Returns
+ *
+ * This function returns no value.
+ */
 fn draw_readonly_banner(frame: &mut Frame, area: Rect, app: &App) {
     let text = if app.readonly {
         " READ-ONLY  rerun with sudo (or press X to escalate) to change anything"
@@ -150,6 +222,24 @@ fn draw_readonly_banner(frame: &mut Frame, area: Rect, app: &App) {
     );
 }
 
+/**
+ * Draws the auto-revert countdown banner.
+ *
+ * Shows how many seconds remain before the pending change is undone, the
+ * description of that change, and the reminder that pressing `Y` keeps it. The
+ * text is drawn in the high-risk style so it cannot be missed.
+ *
+ * # Arguments
+ *
+ * * `frame` (`&mut Frame`) - The terminal frame the banner is rendered into.
+ * * `area` (`Rect`) - The single-row region reserved for the banner.
+ * * `app` (`&App`) - The application state supplying the watchdog, its
+ *   remaining time and the theme.
+ *
+ * # Returns
+ *
+ * This function returns no value.
+ */
 fn draw_watchdog(frame: &mut Frame, area: Rect, app: &App) {
     let remaining = app.watchdog_remaining().unwrap_or(0);
     let description = app
@@ -171,6 +261,24 @@ fn draw_watchdog(frame: &mut Frame, area: Rect, app: &App) {
     );
 }
 
+/**
+ * Draws the status line.
+ *
+ * A marker and the status text are drawn in a colour matching the level
+ * (information, success, warning or error). The text is ellipsized to the
+ * available width. When there is no status, a blank line is drawn so the
+ * layout does not shift.
+ *
+ * # Arguments
+ *
+ * * `frame` (`&mut Frame`) - The terminal frame the status line is rendered into.
+ * * `area` (`Rect`) - The single-row region reserved for the status line.
+ * * `app` (`&App`) - The application state supplying the status and the theme.
+ *
+ * # Returns
+ *
+ * This function returns no value.
+ */
 fn draw_status(frame: &mut Frame, area: Rect, app: &App) {
     let Some(status) = &app.status else {
         frame.render_widget(Paragraph::new(Line::default()), area);
@@ -200,6 +308,24 @@ fn draw_status(frame: &mut Frame, area: Rect, app: &App) {
     );
 }
 
+/**
+ * Draws the footer hint bar.
+ *
+ * Hints for the active tab come from [`keys::hints`] and are added left to
+ * right until the next one would not fit in `area`, so the least important
+ * hints are dropped first. A `q quit` hint is appended when there is spare
+ * width.
+ *
+ * # Arguments
+ *
+ * * `frame` (`&mut Frame`) - The terminal frame the footer is rendered into.
+ * * `area` (`Rect`) - The single-row region reserved for the footer.
+ * * `app` (`&App`) - The application state supplying the active tab and theme.
+ *
+ * # Returns
+ *
+ * This function returns no value.
+ */
 fn draw_footer(frame: &mut Frame, area: Rect, app: &App) {
     let hints = keys::hints(app.tab);
     let mut spans = Vec::new();
@@ -223,6 +349,27 @@ fn draw_footer(frame: &mut Frame, area: Rect, app: &App) {
     frame.render_widget(Paragraph::new(Line::from(spans)), area);
 }
 
+/**
+ * Draws the modal dialog layer on top of the rest of the UI.
+ *
+ * A [`Modal::Message`] is drawn as a centred, cleared box whose border colour
+ * reflects the message level, with the body word-wrapped. A
+ * [`Modal::Confirm`] is drawn as a taller centred box showing the guard
+ * warning, the commands that will run, the plain-English meaning, the dry-run
+ * validation result, optionally the captured `ufw --dry-run` output, and the
+ * key legend.
+ *
+ * # Arguments
+ *
+ * * `frame` (`&mut Frame`) - The terminal frame the dialog is rendered into.
+ * * `area` (`Rect`) - The full screen area the dialog is centred within.
+ * * `app` (`&App`) - The application state supplying the theme.
+ * * `modal` (`&Modal`) - The modal to draw.
+ *
+ * # Returns
+ *
+ * This function returns no value.
+ */
 fn draw_modal(frame: &mut Frame, area: Rect, app: &App, modal: &Modal) {
     match modal {
         Modal::Message(message) => {
@@ -335,8 +482,23 @@ fn draw_modal(frame: &mut Frame, area: Rect, app: &App, modal: &Modal) {
     }
 }
 
-/// A short, scannable heading for the confirmation dialog. The full sentence is already in the
-/// "This means" line, so the title only has to say *what kind* of change this is.
+/**
+ * Builds a short, scannable heading for the confirmation dialog.
+ *
+ * The full sentence is already in the "This means" line, so the title only has
+ * to say *what kind* of change this is. Rule numbers are included when the
+ * pending change refers to an existing rule.
+ *
+ * # Arguments
+ *
+ * * `pending` (`&crate::core::lockout::PendingChange`) - The change awaiting
+ *   confirmation.
+ *
+ * # Returns
+ *
+ * A `String` such as `"Confirm: delete rule #3"` or
+ * `"Confirm: turn the firewall on"`.
+ */
 fn modal_title(pending: &crate::core::lockout::PendingChange) -> String {
     use crate::core::lockout::ChangeKind;
 
@@ -360,7 +522,23 @@ fn modal_title(pending: &crate::core::lockout::PendingChange) -> String {
     }
 }
 
-/// Splits a long line on word boundaries so dialog text never runs off the edge.
+/**
+ * Splits a long line on word boundaries so dialog text never runs off the edge.
+ *
+ * Text that already fits, or a zero width, is returned as a single line. A word
+ * longer than `width` is kept intact on its own line rather than being broken.
+ * An empty input yields one empty string so callers always get at least one
+ * line.
+ *
+ * # Arguments
+ *
+ * * `text` (`&str`) - The line to wrap.
+ * * `width` (`usize`) - The maximum number of characters per output line.
+ *
+ * # Returns
+ *
+ * A `Vec<String>` of wrapped lines, never empty.
+ */
 pub fn wrap_text(text: &str, width: usize) -> Vec<String> {
     if width == 0 || text.chars().count() <= width {
         return vec![text.to_string()];
@@ -387,6 +565,23 @@ pub fn wrap_text(text: &str, width: usize) -> Vec<String> {
     out
 }
 
+/**
+ * Draws the explanation shown when the terminal is below the minimum size.
+ *
+ * The message names the program, states that the terminal is too small, reports
+ * the required and actual dimensions, and tells the user to resize or press `q`
+ * to quit.
+ *
+ * # Arguments
+ *
+ * * `frame` (`&mut Frame`) - The terminal frame the message is rendered into.
+ * * `area` (`Rect`) - The full screen area, whose size is reported.
+ * * `app` (`&App`) - The application state supplying the theme.
+ *
+ * # Returns
+ *
+ * This function returns no value.
+ */
 fn draw_too_small(frame: &mut Frame, area: Rect, app: &App) {
     let lines = vec![
         Line::from(Span::styled("ufw-manager-tui", app.theme.title())),
@@ -402,8 +597,25 @@ fn draw_too_small(frame: &mut Frame, area: Rect, app: &App) {
     frame.render_widget(Paragraph::new(lines).wrap(Wrap { trim: true }), area);
 }
 
-/// Renders just the dialog layer. Used by the integration tests to assert what the confirmation
-/// dialog actually says.
+/**
+ * Renders just the dialog layer into an off-screen buffer and returns it as
+ * text.
+ *
+ * Used by the integration tests to assert what the confirmation dialog actually
+ * says. The buffer is 110x34 and each row is terminated with a newline.
+ *
+ * # Arguments
+ *
+ * * `app` (`&App`) - The application state whose modal should be rendered.
+ *
+ * # Returns
+ *
+ * A `String` containing the rendered dialog, one line per terminal row.
+ *
+ * # Panics
+ *
+ * Panics if the test terminal cannot be created or the draw call fails.
+ */
 #[doc(hidden)]
 pub fn render_dialog_for_test(app: &App) -> String {
     use ratatui::backend::TestBackend;
@@ -433,6 +645,27 @@ pub fn render_dialog_for_test(app: &App) -> String {
 }
 
 #[cfg(test)]
+/**
+ * Renders the whole UI into an off-screen buffer of the given size and returns
+ * it as text.
+ *
+ * Used by the unit tests in the `ui` modules to assert on what a tab actually
+ * draws. Each row of the buffer is terminated with a newline.
+ *
+ * # Arguments
+ *
+ * * `app` (`&App`) - The application state to render.
+ * * `width` (`u16`) - The width of the test terminal in columns.
+ * * `height` (`u16`) - The height of the test terminal in rows.
+ *
+ * # Returns
+ *
+ * A `String` containing the rendered screen, one line per terminal row.
+ *
+ * # Panics
+ *
+ * Panics if the test terminal cannot be created or the draw call fails.
+ */
 pub(crate) fn render_to_string(app: &App, width: u16, height: u16) -> String {
     use ratatui::backend::TestBackend;
     use ratatui::Terminal;
@@ -459,6 +692,21 @@ pub(crate) fn render_to_string(app: &App, width: u16, height: u16) -> String {
 pub(crate) mod tests {
     use super::*;
 
+    /**
+     * Builds an [`App`] backed by the mock backend for use in tests.
+     *
+     * The app uses the dark theme, has counters enabled and confirmation
+     * disabled, and writes no journal, so tests can render any tab without
+     * touching the real firewall.
+     *
+     * # Arguments
+     *
+     * This function takes no arguments.
+     *
+     * # Returns
+     *
+     * An `App` populated from the mock backend's demo state.
+     */
     pub(crate) fn demo_app() -> App {
         use crate::backend::mock::MockBackend;
         use crate::ui::theme::Theme;
@@ -478,6 +726,18 @@ pub(crate) mod tests {
     }
 
     #[test]
+    /**
+     * Checks that wrapping breaks on word boundaries and produces several lines.
+     *
+     * # Arguments
+     *
+     * This function takes no arguments.
+     *
+     * # Returns
+     *
+     * This function returns no value; it fails the test when a line overflows or
+     * no break occurs.
+     */
     fn wrapping_breaks_on_words() {
         let lines = wrap_text("the quick brown fox jumps over the lazy dog", 12);
         assert!(lines
@@ -487,6 +747,17 @@ pub(crate) mod tests {
     }
 
     #[test]
+    /**
+     * Checks that ASCII mode draws ASCII corners and no Unicode ones.
+     *
+     * # Arguments
+     *
+     * This function takes no arguments.
+     *
+     * # Returns
+     *
+     * This function returns no value; it fails the test on the wrong characters.
+     */
     fn ascii_mode_renders_ascii_borders() {
         use crate::ui::theme::Theme;
 
@@ -499,6 +770,19 @@ pub(crate) mod tests {
     }
 
     #[test]
+    /**
+     * Checks that every tab renders when ufw hides the rules from a non-root
+     * user, and that the read-only banner explains the mode.
+     *
+     * # Arguments
+     *
+     * This function takes no arguments.
+     *
+     * # Returns
+     *
+     * This function returns no value; it fails the test on empty output or a
+     * missing banner.
+     */
     fn every_tab_renders_when_the_rules_are_hidden() {
         // The non-root case: ufw refuses to print rules, so the app must still be usable and say so.
         let mut app = tests::demo_app();
@@ -521,6 +805,18 @@ pub(crate) mod tests {
     }
 
     #[test]
+    /**
+     * Checks that a terminal below the minimum size shows the explanation.
+     *
+     * # Arguments
+     *
+     * This function takes no arguments.
+     *
+     * # Returns
+     *
+     * This function returns no value; it fails the test when the message is
+     * missing.
+     */
     fn a_terminal_below_the_minimum_size_shows_an_explanation() {
         let mut app = tests::demo_app();
         app.tab = Tab::Rules;
@@ -529,11 +825,33 @@ pub(crate) mod tests {
     }
 
     #[test]
+    /**
+     * Checks that text shorter than the width is returned unchanged.
+     *
+     * # Arguments
+     *
+     * This function takes no arguments.
+     *
+     * # Returns
+     *
+     * This function returns no value; it fails the test on a different result.
+     */
     fn short_text_is_left_alone() {
         assert_eq!(wrap_text("short", 20), vec!["short".to_string()]);
     }
 
     #[test]
+    /**
+     * Checks that an empty string wraps to a single empty line.
+     *
+     * # Arguments
+     *
+     * This function takes no arguments.
+     *
+     * # Returns
+     *
+     * This function returns no value; it fails the test on a different result.
+     */
     fn empty_lines_survive_wrapping() {
         assert_eq!(wrap_text("", 20), vec![String::new()]);
     }

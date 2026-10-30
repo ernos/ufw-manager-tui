@@ -421,7 +421,22 @@ mod tests {
     }
 
     #[test]
-    /** Verifies that well-known ports have service names and unknown ones do not. */
+    /**
+     * Verifies that well-known ports have service names and unknown ones do not.
+     *
+     * # Arguments
+     *
+     * This function takes no arguments.
+     *
+     * # Returns
+     *
+     * `()` - This function returns no value; it asserts the expected behavior.
+     *
+     * # Panics
+     *
+     * Panics when an assertion fails, which reports the explanation that did
+     * not match the expected text.
+     */
     fn names_well_known_ports() {
         assert_eq!(service_name(22), Some("SSH"));
         assert_eq!(service_name(443), Some("HTTPS"));
@@ -429,7 +444,22 @@ mod tests {
     }
 
     #[test]
-    /** Verifies the explanation generated for an unrestricted inbound SSH rule. */
+    /**
+     * Verifies the explanation generated for an unrestricted inbound SSH rule.
+     *
+     * # Arguments
+     *
+     * This function takes no arguments.
+     *
+     * # Returns
+     *
+     * `()` - This function returns no value; it asserts the expected behavior.
+     *
+     * # Panics
+     *
+     * Panics when an assertion fails, which reports the explanation that did
+     * not match the expected text.
+     */
     fn describes_an_open_ssh_rule() {
         assert_eq!(
             explain_rule(&rule(Action::Allow, PortSpec::single(22), None)),
@@ -438,7 +468,22 @@ mod tests {
     }
 
     #[test]
-    /** Verifies that a private source network is described as a local network. */
+    /**
+     * Verifies that a private source network is described as a local network.
+     *
+     * # Arguments
+     *
+     * This function takes no arguments.
+     *
+     * # Returns
+     *
+     * `()` - This function returns no value; it asserts the expected behavior.
+     *
+     * # Panics
+     *
+     * Panics when an assertion fails, which reports the explanation that did
+     * not match the expected text.
+     */
     fn describes_a_lan_only_rule() {
         assert_eq!(
             explain_rule(&rule(Action::Allow, PortSpec::single(22), Some("192.168.1.0/24"))),
@@ -447,7 +492,22 @@ mod tests {
     }
 
     #[test]
-    /** Verifies that a single-address source is described as one computer. */
+    /**
+     * Verifies that a single-address source is described as one computer.
+     *
+     * # Arguments
+     *
+     * This function takes no arguments.
+     *
+     * # Returns
+     *
+     * `()` - This function returns no value; it asserts the expected behavior.
+     *
+     * # Panics
+     *
+     * Panics when an assertion fails, which reports the explanation that did
+     * not match the expected text.
+     */
     fn describes_a_single_host_source() {
         assert_eq!(
             explain_rule(&rule(Action::Allow, PortSpec::single(443), Some("203.0.113.7"))),
@@ -456,7 +516,22 @@ mod tests {
     }
 
     #[test]
-    /** Verifies that a deny action is described using "Block". */
+    /**
+     * Verifies that a deny action is described using "Block".
+     *
+     * # Arguments
+     *
+     * This function takes no arguments.
+     *
+     * # Returns
+     *
+     * `()` - This function returns no value; it asserts the expected behavior.
+     *
+     * # Panics
+     *
+     * Panics when an assertion fails, which reports the explanation that did
+     * not match the expected text.
+     */
     fn describes_a_deny_rule_as_blocking() {
         assert_eq!(
             explain_rule(&rule(Action::Deny, PortSpec::single(23), None)),
@@ -465,7 +540,22 @@ mod tests {
     }
 
     #[test]
-    /** Verifies that limit actions mention rate-limiting repeat attempts. */
+    /**
+     * Verifies that limit actions mention rate-limiting repeat attempts.
+     *
+     * # Arguments
+     *
+     * This function takes no arguments.
+     *
+     * # Returns
+     *
+     * `()` - This function returns no value; it asserts the expected behavior.
+     *
+     * # Panics
+     *
+     * Panics when an assertion fails, which reports the explanation that did
+     * not match the expected text.
+     */
     fn describes_rate_limiting() {
         assert_eq!(
             explain_rule(&rule(Action::Limit, PortSpec::single(22), None)),
@@ -474,7 +564,22 @@ mod tests {
     }
 
     #[test]
-    /** Verifies formatting for lists of ports and port ranges. */
+    /**
+     * Verifies formatting for lists of ports and port ranges.
+     *
+     * # Arguments
+     *
+     * This function takes no arguments.
+     *
+     * # Returns
+     *
+     * `()` - This function returns no value; it asserts the expected behavior.
+     *
+     * # Panics
+     *
+     * Panics when an assertion fails, which reports the explanation that did
+     * not match the expected text.
+     */
     fn describes_port_lists_and_ranges() {
         assert_eq!(
             describe_port(
@@ -493,7 +598,22 @@ mod tests {
     }
 
     #[test]
-    /** Verifies that application profiles are described by their profile name. */
+    /**
+     * Verifies that application profiles are described by their profile name.
+     *
+     * # Arguments
+     *
+     * This function takes no arguments.
+     *
+     * # Returns
+     *
+     * `()` - This function returns no value; it asserts the expected behavior.
+     *
+     * # Panics
+     *
+     * Panics when an assertion fails, which reports the explanation that did
+     * not match the expected text.
+     */
     fn describes_application_profiles() {
         assert_eq!(
             describe_port(&PortSpec::App("OpenSSH".into()), Protocol::Any),
@@ -502,7 +622,22 @@ mod tests {
     }
 
     #[test]
-    /** Verifies that a non-empty rule comment is appended in quotation marks. */
+    /**
+     * Verifies that a non-empty rule comment is appended in quotation marks.
+     *
+     * # Arguments
+     *
+     * This function takes no arguments.
+     *
+     * # Returns
+     *
+     * `()` - This function returns no value; it asserts the expected behavior.
+     *
+     * # Panics
+     *
+     * Panics when an assertion fails, which reports the explanation that did
+     * not match the expected text.
+     */
     fn appends_the_note_in_quotes() {
         let mut r = rule(Action::Allow, PortSpec::single(22), None);
         r.comment = Some("Home SSH".into());
@@ -510,7 +645,22 @@ mod tests {
     }
 
     #[test]
-    /** Verifies the description of an outbound UDP rule. */
+    /**
+     * Verifies the description of an outbound UDP rule.
+     *
+     * # Arguments
+     *
+     * This function takes no arguments.
+     *
+     * # Returns
+     *
+     * `()` - This function returns no value; it asserts the expected behavior.
+     *
+     * # Panics
+     *
+     * Panics when an assertion fails, which reports the explanation that did
+     * not match the expected text.
+     */
     fn describes_outbound_rules() {
         let mut r = rule(Action::Allow, PortSpec::single(53), None);
         r.direction = Direction::Out;

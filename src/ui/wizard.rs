@@ -11,6 +11,24 @@ use crate::core::command;
 use crate::core::explain;
 use crate::core::risk::RiskLevel;
 
+/**
+ * Draws the Add tab's guided wizard.
+ *
+ * Lays out the breadcrumb, the current prompt, the list of options and the
+ * preview of the rule being built as four stacked regions. When a text field is
+ * open, the input dialog is drawn on top of the whole area.
+ *
+ * # Arguments
+ *
+ * * `frame` (`&mut Frame`) - The terminal frame the widgets are rendered into.
+ * * `area` (`Rect`) - The screen region reserved for the Add tab.
+ * * `app` (`&App`) - The application state supplying the wizard state, the
+ *   draft, the profiles and the theme.
+ *
+ * # Returns
+ *
+ * This function returns no value.
+ */
 pub fn draw(frame: &mut Frame, area: Rect, app: &App) {
     let rows = Layout::vertical([
         Constraint::Length(1),
@@ -40,6 +58,24 @@ pub fn draw(frame: &mut Frame, area: Rect, app: &App) {
     }
 }
 
+/**
+ * Draws the wizard breadcrumb.
+ *
+ * Shows the four numbered steps separated by chevrons, highlighting the current
+ * one. An `advanced` marker is appended when the advanced step is active, and an
+ * `editing rule #N` note when an existing rule is being edited.
+ *
+ * # Arguments
+ *
+ * * `frame` (`&mut Frame`) - The terminal frame the breadcrumb is rendered into.
+ * * `area` (`Rect`) - The single-row region reserved for the breadcrumb.
+ * * `app` (`&App`) - The application state supplying the wizard step, the rule
+ *   being edited and the theme.
+ *
+ * # Returns
+ *
+ * This function returns no value.
+ */
 fn draw_breadcrumb(frame: &mut Frame, area: Rect, app: &App) {
     let steps = [
         (WizardStep::Goal, "1 Goal"),
@@ -69,6 +105,24 @@ fn draw_breadcrumb(frame: &mut Frame, area: Rect, app: &App) {
     frame.render_widget(Paragraph::new(Line::from(spans)), area);
 }
 
+/**
+ * Draws the selectable options for the current wizard step.
+ *
+ * Each option is shown with a selection marker and its label, plus a hint when
+ * one exists; the selected option is highlighted. Any validation error from the
+ * wizard is appended in the critical risk style.
+ *
+ * # Arguments
+ *
+ * * `frame` (`&mut Frame`) - The terminal frame the options are rendered into.
+ * * `area` (`Rect`) - The region reserved for the option list.
+ * * `app` (`&App`) - The application state supplying the wizard step, the
+ *   options, the selection, the error and the theme.
+ *
+ * # Returns
+ *
+ * This function returns no value.
+ */
 fn draw_options(frame: &mut Frame, area: Rect, app: &App) {
     let block = app.theme.titled(" options ");
     let options = app.wizard_options();
@@ -113,6 +167,25 @@ fn draw_options(frame: &mut Frame, area: Rect, app: &App) {
     );
 }
 
+/**
+ * Draws the preview of the rule being built.
+ *
+ * Shows the plain-English explanation of the draft, the `ufw` command that would
+ * create it (or why it is not valid yet), the risk badge and summary and, when a
+ * simulation has been run, its explanation. On the goal step a short
+ * introduction is drawn instead.
+ *
+ * # Arguments
+ *
+ * * `frame` (`&mut Frame`) - The terminal frame the preview is rendered into.
+ * * `area` (`Rect`) - The region reserved for the preview.
+ * * `app` (`&App`) - The application state supplying the wizard step, the draft,
+ *   the trace, the profiles and the theme.
+ *
+ * # Returns
+ *
+ * This function returns no value.
+ */
 fn draw_preview(frame: &mut Frame, area: Rect, app: &App) {
     let block = app.theme.titled(" what this will do ");
 
@@ -177,6 +250,20 @@ fn draw_preview(frame: &mut Frame, area: Rect, app: &App) {
     );
 }
 
+/**
+ * Returns the prompt shown above a text input for the given field.
+ *
+ * The label includes an example of the expected format so the user knows what
+ * to type.
+ *
+ * # Arguments
+ *
+ * * `field` (`InputField`) - The field being edited.
+ *
+ * # Returns
+ *
+ * A `&'static str` describing the field and its expected format.
+ */
 fn field_label(field: InputField) -> &'static str {
     match field {
         InputField::Address => "address or network (e.g. 192.168.1.0/24, 203.0.113.7)",
@@ -189,6 +276,25 @@ fn field_label(field: InputField) -> &'static str {
     }
 }
 
+/**
+ * Draws the centred text-input dialog.
+ *
+ * The dialog is cleared first so the wizard behind it does not show through. It
+ * shows the field's label, the value split around a highlighted block cursor,
+ * and the accept and cancel key hints.
+ *
+ * # Arguments
+ *
+ * * `frame` (`&mut Frame`) - The terminal frame the dialog is rendered into.
+ * * `area` (`Rect`) - The full screen area the dialog is centred within.
+ * * `app` (`&App`) - The application state supplying the theme.
+ * * `field` (`InputField`) - The field being edited, used for the label.
+ * * `input` (`&crate::ui::widgets::TextInput`) - The text being edited.
+ *
+ * # Returns
+ *
+ * This function returns no value.
+ */
 fn draw_input(
     frame: &mut Frame,
     area: Rect,
@@ -229,6 +335,17 @@ mod tests {
     use crate::ui::tests::demo_app;
 
     #[test]
+    /**
+     * Checks that starting the wizard switches to the Add tab on the goal step.
+     *
+     * # Arguments
+     *
+     * This function takes no arguments.
+     *
+     * # Returns
+     *
+     * This function returns no value; it fails the test on a wrong tab or step.
+     */
     fn the_wizard_opens_on_the_goal_step() {
         let mut app = demo_app();
         app.start_add();
@@ -239,6 +356,17 @@ mod tests {
     }
 
     #[test]
+    /**
+     * Checks that a new draft is prefilled with the local network address.
+     *
+     * # Arguments
+     *
+     * This function takes no arguments.
+     *
+     * # Returns
+     *
+     * This function returns no value; it fails the test on a different value.
+     */
     fn the_default_draft_was_prefilled_with_the_local_network() {
         let mut app = demo_app();
         app.start_add();
@@ -249,6 +377,17 @@ mod tests {
     }
 
     #[test]
+    /**
+     * Checks that every wizard step renders without panicking.
+     *
+     * # Arguments
+     *
+     * This function takes no arguments.
+     *
+     * # Returns
+     *
+     * This function returns no value; a panic fails the test.
+     */
     fn every_step_renders() {
         let mut app = demo_app();
         app.start_add();
@@ -265,6 +404,18 @@ mod tests {
     }
 
     #[test]
+    /**
+     * Checks that the text-input dialog renders and shows the typed value.
+     *
+     * # Arguments
+     *
+     * This function takes no arguments.
+     *
+     * # Returns
+     *
+     * This function returns no value; it fails the test when the value is not
+     * drawn.
+     */
     fn an_open_text_input_renders_without_panicking() {
         let mut app = demo_app();
         app.start_add();

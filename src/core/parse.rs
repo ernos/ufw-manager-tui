@@ -30,6 +30,16 @@ use crate::core::rule::{
 };
 
 #[derive(Debug, Clone, Default)]
+/**
+ * The result of parsing `ufw status numbered`.
+ *
+ * # Fields
+ *
+ * * `active` (`bool`) - Whether the status line reported the firewall as active.
+ * * `rules` (`Vec<Rule>`) - The rules that were parsed successfully.
+ * * `unparsed` (`Vec<String>`) - Rows that could not be parsed, kept verbatim so they
+ *   are still shown and can still be deleted by number.
+ */
 pub struct ParsedRules {
     pub active: bool,
     pub rules: Vec<Rule>,
@@ -37,6 +47,18 @@ pub struct ParsedRules {
 }
 
 #[derive(Debug, Clone)]
+/**
+ * The header values from `ufw status verbose`.
+ *
+ * # Fields
+ *
+ * * `active` (`bool`) - Whether the firewall is active.
+ * * `log_level` (`LogLevel`) - The configured logging level.
+ * * `default_incoming` (`Policy`) - The default policy for incoming traffic.
+ * * `default_outgoing` (`Policy`) - The default policy for outgoing traffic.
+ * * `default_routed` (`RoutedPolicy`) - The default policy for forwarded traffic.
+ * * `new_profiles` (`String`) - The `New profiles:` setting, usually `skip` or `ask`.
+ */
 pub struct ParsedHeader {
     pub active: bool,
     pub log_level: LogLevel,
@@ -47,6 +69,19 @@ pub struct ParsedHeader {
 }
 
 impl Default for ParsedHeader {
+    /**
+     * Implements `Default` for [`ParsedHeader`], returning the values `ufw` uses before any
+     * status output is parsed.
+     *
+     * # Arguments
+     *
+     * This method takes no arguments.
+     *
+     * # Returns
+     *
+     * A `ParsedHeader` with the firewall inactive, low logging, deny incoming, allow
+     * outgoing, routed policy disabled, and new profiles set to `skip`.
+     */
     fn default() -> Self {
         Self {
             active: false,
@@ -59,8 +94,17 @@ impl Default for ParsedHeader {
     }
 }
 
-/// A profile from `/etc/ufw/applications.d`, i.e. what `ufw app info NAME` describes.
 #[derive(Debug, Clone, PartialEq, Eq)]
+/**
+ * A profile from `/etc/ufw/applications.d`, i.e. what `ufw app info NAME` describes.
+ *
+ * # Fields
+ *
+ * * `name` (`String`) - The section name, which is the profile name `ufw` accepts.
+ * * `title` (`String`) - The human-readable title from the `title` key.
+ * * `description` (`String`) - The description from the `description` key.
+ * * `ports_raw` (`String`) - The unparsed `ports` value, such as `80,443/tcp`.
+ */
 pub struct AppProfile {
     pub name: String,
     pub title: String,
@@ -69,7 +113,18 @@ pub struct AppProfile {
 }
 
 impl AppProfile {
-    /// The protocols an application profile opens, used by the risk engine.
+    /**
+     * Returns the protocols an application profile opens, used by the risk engine.
+     *
+     * # Arguments
+     *
+     * * `self` (`&self`) - The profile whose `ports_raw` value is read.
+     *
+     * # Returns
+     *
+     * A `Vec<Protocol>` holding one entry per recognized `<port>/<proto>` part, in the
+     * order they appear. Unrecognized protocol words are skipped.
+     */
     pub fn protocols(&self) -> Vec<Protocol> {
         self.ports_raw
             .split(['|', ','])
@@ -78,7 +133,20 @@ impl AppProfile {
             .collect()
     }
 
-    /// The distinct ports an application profile opens.
+    /**
+     * Returns the distinct ports an application profile opens.
+     *
+     * Ranges of up to 33 ports are expanded; longer ranges contribute only their start
+     * port, because a profile that opens `1:65535` is not useful to enumerate.
+     *
+     * # Arguments
+     *
+     * * `self` (`&self`) - The profile whose `ports_raw` value is read.
+     *
+     * # Returns
+     *
+     * A sorted, de-duplicated `Vec<u16>` of the ports the profile opens.
+     */
     pub fn ports(&self) -> Vec<u16> {
         let mut out = Vec::new();
         for part in self.ports_raw.split(['|', ',']) {
@@ -98,8 +166,17 @@ impl AppProfile {
     }
 }
 
-/// One socket from `ss -tulpn`, or from `ufw show listening`.
 #[derive(Debug, Clone, PartialEq, Eq)]
+/**
+ * One socket from `ss -tulpn`, or from `ufw show listening`.
+ *
+ * # Fields
+ *
+ * * `proto` (`String`) - The lower-case protocol, such as `tcp` or `udp`.
+ * * `addr` (`String`) - The local address the socket is bound to.
+ * * `port` (`u16`) - The local port the socket is bound to.
+ * * `process` (`Option<String>`) - The owning process name, when `ss` reported one.
+ */
 pub struct Listening {
     pub proto: String,
     pub addr: String,
@@ -108,17 +185,50 @@ pub struct Listening {
 }
 
 impl Listening {
+    /**
+     * Returns whether the listening address is a loopback address.
+     *
+     * # Arguments
+     *
+     * * `self` (`&self`) - The listening socket being inspected.
+     *
+     * # Returns
+     *
+     * `true` for addresses starting with `127.` and for `::1`; otherwise, `false`.
+     */
     pub fn is_loopback(&self) -> bool {
         self.addr.starts_with("127.") || self.addr == "::1"
     }
 
+    /**
+     * Returns whether the listening address accepts traffic on every interface.
+     *
+     * # Arguments
+     *
+     * * `self` (`&self`) - The listening socket being inspected.
+     *
+     * # Returns
+     *
+     * `true` for `0.0.0.0`, `::` and `*`; otherwise, `false`.
+     */
     pub fn is_wildcard(&self) -> bool {
         self.addr == "0.0.0.0" || self.addr == "::" || self.addr == "*"
     }
 }
 
-/// One `[UFW BLOCK]` kernel log entry.
 #[derive(Debug, Clone, PartialEq, Eq)]
+/**
+ * One `[UFW BLOCK]` kernel log entry.
+ *
+ * # Fields
+ *
+ * * `iface` (`String`) - The incoming interface from `IN=`, or `?` when absent.
+ * * `src` (`IpAddr`) - The source address from `SRC=`.
+ * * `dst` (`IpAddr`) - The destination address from `DST=`.
+ * * `proto` (`String`) - The lower-case protocol from `PROTO=`, or `?` when absent.
+ * * `spt` (`u16`) - The source port from `SPT=`, or `0` when absent.
+ * * `dpt` (`u16`) - The destination port from `DPT=`, or `0` when absent.
+ */
 pub struct BlockEvent {
     pub iface: String,
     pub src: IpAddr,
@@ -128,8 +238,16 @@ pub struct BlockEvent {
     pub dpt: u16,
 }
 
-/// The bits of `/etc/ufw/ufw.conf` a non-root user is allowed to read.
 #[derive(Debug, Clone, Copy, Default)]
+/**
+ * The bits of `/etc/ufw/ufw.conf` a non-root user is allowed to read.
+ *
+ * # Fields
+ *
+ * * `enabled` (`Option<bool>`) - The `ENABLED` value, or `None` when the key was absent.
+ * * `log_level` (`Option<LogLevel>`) - The `LOGLEVEL` value, or `None` when the key was
+ *   absent or unrecognized.
+ */
 pub struct UfwConf {
     pub enabled: Option<bool>,
     pub log_level: Option<LogLevel>,
@@ -139,6 +257,21 @@ pub struct UfwConf {
 // status numbered
 // ---------------------------------------------------------------------------------------------
 
+/**
+ * Parses `ufw status numbered` output into rules.
+ *
+ * Rows that cannot be parsed are kept verbatim in `unparsed` so they are still shown
+ * and can still be deleted by number.
+ *
+ * # Arguments
+ *
+ * * `text` (`&str`) - The complete output of `ufw status numbered`.
+ *
+ * # Returns
+ *
+ * A `ParsedRules` holding the active flag, the parsed rules, and the raw rows that
+ * could not be parsed. An inactive status returns the default, empty value.
+ */
 pub fn parse_status_numbered(text: &str) -> ParsedRules {
     let mut out = ParsedRules::default();
     for line in text.lines() {
@@ -161,7 +294,18 @@ pub fn parse_status_numbered(text: &str) -> ParsedRules {
     out
 }
 
-/// Extracts `[ 12] ` from the start of a rule row.
+/**
+ * Extracts `[ 12] ` from the start of a rule row.
+ *
+ * # Arguments
+ *
+ * * `line` (`&str`) - One line of `ufw status numbered` output.
+ *
+ * # Returns
+ *
+ * `Option<(u32, &str)>` - The rule number and the remaining row text with leading
+ * whitespace removed, or `None` when the line does not start with a bracketed number.
+ */
 fn split_rule_number(line: &str) -> Option<(u32, &str)> {
     let open = line.find('[')?;
     if !line[..open].trim().is_empty() {
@@ -176,7 +320,22 @@ fn split_rule_number(line: &str) -> Option<(u32, &str)> {
     Some((number, line[close + 1..].trim_start()))
 }
 
-/// Splits `body` (a row with the number removed) into a [`Rule`].
+/**
+ * Splits `body` (a row with the number removed) into a [`Rule`].
+ *
+ * The trailing comment and attribute group are stripped first, then the action word is
+ * used as the anchor that separates the `To` column from the `From` column.
+ *
+ * # Arguments
+ *
+ * * `number` (`u32`) - The rule number taken from the row prefix.
+ * * `body` (`&str`) - The row text with the number removed.
+ *
+ * # Returns
+ *
+ * `Result<Rule, String>` - The parsed rule, or a message describing why the row could
+ * not be parsed (for example `no action word`).
+ */
 fn parse_rule_row(number: u32, body: &str) -> Result<Rule, String> {
     let body = body.trim_end();
 
@@ -256,6 +415,19 @@ fn parse_rule_row(number: u32, body: &str) -> Result<Rule, String> {
     })
 }
 
+/**
+ * Splits a trailing parenthesised attribute group off a rule row.
+ *
+ * # Arguments
+ *
+ * * `body` (`&str`) - The rule row with the number and comment already removed.
+ *
+ * # Returns
+ *
+ * A tuple of the remaining text and the `LogMode` implied by the attributes. When the
+ * trailing group is not a known attribute list, the text is returned unchanged with
+ * `LogMode::None`.
+ */
 fn strip_attributes(body: &str) -> (&str, LogMode) {
     let trimmed = body.trim_end();
     if !trimmed.ends_with(')') {
@@ -283,6 +455,18 @@ fn strip_attributes(body: &str) -> (&str, LogMode) {
     (trimmed[..open].trim_end(), log)
 }
 
+/**
+ * Splits text into whitespace-delimited tokens with their byte offsets.
+ *
+ * # Arguments
+ *
+ * * `text` (`&str`) - The text to tokenize.
+ *
+ * # Returns
+ *
+ * A `Vec<(usize, usize, &str)>` of `(start, end, token)` triples, where the offsets
+ * index into `text`.
+ */
 fn tokenize(text: &str) -> Vec<(usize, usize, &str)> {
     let bytes = text.as_bytes();
     let mut out = Vec::new();
@@ -303,6 +487,18 @@ fn tokenize(text: &str) -> Vec<(usize, usize, &str)> {
 }
 
 #[derive(Debug, Default)]
+/**
+ * One `To` or `From` cell of a `ufw status` row, before it is turned into an
+ * [`Endpoint`].
+ *
+ * # Fields
+ *
+ * * `addr` (`Option<String>`) - The address or network, or `None` for `Anywhere`.
+ * * `port` (`PortSpec`) - The port selection printed in this cell.
+ * * `protocol` (`Option<Protocol>`) - The protocol suffix, when the cell carried one.
+ * * `iface` (`Option<String>`) - The interface from an `on <iface>` clause.
+ * * `v6` (`bool`) - Whether the cell carried the `(v6)` marker.
+ */
 struct Column {
     addr: Option<String>,
     port: PortSpec,
@@ -312,6 +508,17 @@ struct Column {
 }
 
 impl Column {
+    /**
+     * Returns a column that matches any address and any port.
+     *
+     * # Arguments
+     *
+     * This function takes no arguments.
+     *
+     * # Returns
+     *
+     * A `Column` with no address, no protocol, no interface and `PortSpec::Any`.
+     */
     fn any() -> Self {
         Self {
             port: PortSpec::Any,
@@ -320,7 +527,21 @@ impl Column {
     }
 }
 
-/// Parses one `To` or `From` cell.
+/**
+ * Parses one `To` or `From` cell.
+ *
+ * A trailing `(v6)` marker and a trailing `on <iface>` clause are removed before the
+ * address and port are parsed.
+ *
+ * # Arguments
+ *
+ * * `text` (`&str`) - The cell text, already trimmed of the action word and comment.
+ *
+ * # Returns
+ *
+ * `Result<Column, String>` - The parsed column, or an error when the port
+ * specification cannot be parsed.
+ */
 fn parse_column(text: &str) -> Result<Column, String> {
     let text = text.trim();
     if text.is_empty() {
@@ -342,6 +563,20 @@ fn parse_column(text: &str) -> Result<Column, String> {
     Ok(column)
 }
 
+/**
+ * Splits a trailing `on <iface>` clause off a column.
+ *
+ * The search runs from the right so a hostname containing `on` is not mangled.
+ *
+ * # Arguments
+ *
+ * * `text` (`&str`) - The column text to split.
+ *
+ * # Returns
+ *
+ * A tuple of the remaining text and the interface name, or `None` when no plausible
+ * interface clause is present.
+ */
 fn split_interface(text: &str) -> (&str, Option<String>) {
     // Search from the right so a hostname containing "on" is not mangled.
     let mut search_from = text.len();
@@ -363,6 +598,18 @@ fn split_interface(text: &str) -> (&str, Option<String>) {
     (text, None)
 }
 
+/**
+ * Parses the address and port part of a column, without `(v6)` or `on <iface>`.
+ *
+ * # Arguments
+ *
+ * * `text` (`&str`) - The column text to parse.
+ *
+ * # Returns
+ *
+ * `Result<Column, String>` - The parsed column, or an error when the port specification
+ * cannot be parsed.
+ */
 fn parse_endpoint(text: &str) -> Result<Column, String> {
     let text = text.trim();
     if text.is_empty() {
@@ -391,6 +638,18 @@ fn parse_endpoint(text: &str) -> Result<Column, String> {
     single_token(text)
 }
 
+/**
+ * Parses a column that consists of a single token.
+ *
+ * # Arguments
+ *
+ * * `text` (`&str`) - The token to interpret.
+ *
+ * # Returns
+ *
+ * `Result<Column, String>` - The parsed column. Unrecognized text is treated as an
+ * application profile name; an invalid numeric port specification is an error.
+ */
 fn single_token(text: &str) -> Result<Column, String> {
     if text.eq_ignore_ascii_case("Anywhere") || text.eq_ignore_ascii_case("any") {
         return Ok(Column::any());
@@ -442,6 +701,18 @@ fn single_token(text: &str) -> Result<Column, String> {
     })
 }
 
+/**
+ * Parses a `<port>[/<proto>]` token.
+ *
+ * # Arguments
+ *
+ * * `token` (`&str`) - The token to parse.
+ *
+ * # Returns
+ *
+ * `Option<(PortSpec, Option<Protocol>)>` - The port specification and optional
+ * protocol, or `None` when the token is not a port specification.
+ */
 fn port_token(token: &str) -> Option<(PortSpec, Option<Protocol>)> {
     let (base, protocol) = match token.rsplit_once('/') {
         Some((base, suffix)) => (base, Some(Protocol::from_status_token(suffix)?)),
@@ -462,6 +733,18 @@ fn port_token(token: &str) -> Option<(PortSpec, Option<Protocol>)> {
 // status verbose
 // ---------------------------------------------------------------------------------------------
 
+/**
+ * Parses the header lines of `ufw status verbose`.
+ *
+ * # Arguments
+ *
+ * * `text` (`&str`) - The complete output of `ufw status verbose`.
+ *
+ * # Returns
+ *
+ * A `ParsedHeader` with the active flag, logging level, default policies and
+ * new-profile setting. Lines that are not recognized are ignored.
+ */
 pub fn parse_status_verbose(text: &str) -> ParsedHeader {
     let mut header = ParsedHeader::default();
     for line in text.lines() {
@@ -490,6 +773,20 @@ pub fn parse_status_verbose(text: &str) -> ParsedHeader {
     header
 }
 
+/**
+ * Applies the `Default:` line of verbose output to a header.
+ *
+ * # Arguments
+ *
+ * * `rest` (`&str`) - The text after `Default:`, for example
+ *   `deny (incoming), allow (outgoing)`.
+ * * `header` (`&mut ParsedHeader`) - The header being filled in; it is mutated in
+ *   place.
+ *
+ * # Returns
+ *
+ * This function returns no value. Unrecognized directions and words are ignored.
+ */
 fn parse_defaults(rest: &str, header: &mut ParsedHeader) {
     for part in rest.split(',') {
         let part = part.trim();
@@ -518,7 +815,20 @@ fn parse_defaults(rest: &str, header: &mut ParsedHeader) {
     }
 }
 
-/// Merges the numbered rule list with the verbose header into the state the UI works with.
+/**
+ * Merges the numbered rule list with the verbose header into the state the UI works
+ * with.
+ *
+ * # Arguments
+ *
+ * * `rules` (`ParsedRules`) - The parsed rule list, consumed by value.
+ * * `header` (`ParsedHeader`) - The parsed verbose header, consumed by value.
+ *
+ * # Returns
+ *
+ * A `FirewallState` whose `enabled` flag is true when either input reported the
+ * firewall as active, and whose `rules_readable` flag is always true.
+ */
 pub fn combine_rules_and_header(rules: ParsedRules, header: ParsedHeader) -> FirewallState {
     FirewallState {
         enabled: rules.active || header.active,
@@ -533,6 +843,17 @@ pub fn combine_rules_and_header(rules: ParsedRules, header: ParsedHeader) -> Fir
     }
 }
 
+/**
+ * Parses the output of `ufw status` into the state the UI works with.
+ *
+ * # Arguments
+ *
+ * * `text` (`&str`) - The output of `ufw status`, numbered or verbose.
+ *
+ * # Returns
+ *
+ * A `FirewallState` combining the numbered rule list with the verbose header.
+ */
 pub fn parse_status(text: &str) -> FirewallState {
     let rules = parse_status_numbered(text);
     let header = parse_status_verbose(text);
@@ -543,7 +864,22 @@ pub fn parse_status(text: &str) -> FirewallState {
 // application profiles
 // ---------------------------------------------------------------------------------------------
 
-/// Parses one `.ufw.profile` / `applications.d/*` INI file, which may hold several profiles.
+/**
+ * Parses one `.ufw.profile` or `applications.d` INI file, which may hold several
+ * profiles.
+ *
+ * Comment lines and lines outside a `[section]` are ignored, as are keys other than
+ * `title`, `description` and `ports`.
+ *
+ * # Arguments
+ *
+ * * `text` (`&str`) - The contents of the profile file.
+ *
+ * # Returns
+ *
+ * A `Vec<AppProfile>` with one entry per section, in file order. Sections with an empty
+ * name are dropped.
+ */
 pub fn parse_profile_ini(text: &str) -> Vec<AppProfile> {
     let mut out: Vec<AppProfile> = Vec::new();
     for line in text.lines() {
@@ -582,6 +918,18 @@ pub fn parse_profile_ini(text: &str) -> Vec<AppProfile> {
 // /etc/ufw/ufw.conf (readable without root)
 // ---------------------------------------------------------------------------------------------
 
+/**
+ * Parses `/etc/ufw/ufw.conf`, which a non-root user is allowed to read.
+ *
+ * # Arguments
+ *
+ * * `text` (`&str`) - The contents of the configuration file.
+ *
+ * # Returns
+ *
+ * A `UfwConf` with the `ENABLED` and `LOGLEVEL` values that were present. Comments and
+ * unrecognized keys are ignored.
+ */
 pub fn parse_ufw_conf(text: &str) -> UfwConf {
     let mut conf = UfwConf::default();
     for line in text.lines() {
@@ -605,11 +953,22 @@ pub fn parse_ufw_conf(text: &str) -> UfwConf {
 // ss -tulpn
 // ---------------------------------------------------------------------------------------------
 
-/// Parses `ss -tulpnH` output.
-///
-/// ```text
-/// tcp   LISTEN 0 4096 0.0.0.0:22 0.0.0.0:* users:(("sshd",pid=1234,fd=3))
-/// ```
+/**
+ * Parses `ss -tulpnH` output.
+ *
+ * ```text
+ * tcp   LISTEN 0 4096 0.0.0.0:22 0.0.0.0:* users:(("sshd",pid=1234,fd=3))
+ * ```
+ *
+ * # Arguments
+ *
+ * * `text` (`&str`) - The complete output of `ss -tulpnH`.
+ *
+ * # Returns
+ *
+ * A `Vec<Listening>` with one entry per socket that has at least five columns and a
+ * parseable local address. Lines that do not fit that shape are skipped.
+ */
 pub fn parse_ss(text: &str) -> Vec<Listening> {
     let mut out = Vec::new();
     for line in text.lines() {
@@ -635,6 +994,18 @@ pub fn parse_ss(text: &str) -> Vec<Listening> {
     out
 }
 
+/**
+ * Splits an `address:port` value from `ss` output.
+ *
+ * # Arguments
+ *
+ * * `value` (`&str`) - The address and port, optionally with the address in brackets.
+ *
+ * # Returns
+ *
+ * `Option<(String, u16)>` - The address without brackets and the port, or `None` when
+ * the value has no colon or the port is not a valid `u16`.
+ */
 fn split_host_port(value: &str) -> Option<(String, u16)> {
     let (host, port) = value.rsplit_once(':')?;
     let port = port.parse::<u16>().ok()?;
@@ -646,7 +1017,19 @@ fn split_host_port(value: &str) -> Option<(String, u16)> {
 // kernel log: [UFW BLOCK]
 // ---------------------------------------------------------------------------------------------
 
-/// Parses one kernel log line into a block event, or `None` when the line is not a ufw block.
+/**
+ * Parses one kernel log line into a block event.
+ *
+ * # Arguments
+ *
+ * * `line` (`&str`) - One kernel log line, expected to contain `[UFW BLOCK]`.
+ *
+ * # Returns
+ *
+ * `Option<BlockEvent>` - The parsed event, or `None` when the line is not a ufw block
+ * or its `SRC=` or `DST=` field is missing or not a valid address. Missing `SPT=`,
+ * `DPT=`, `PROTO=` and `IN=` fields fall back to `0`, `?` and `?` respectively.
+ */
 pub fn parse_ufw_log_line(line: &str) -> Option<BlockEvent> {
     if !line.contains("[UFW BLOCK]") {
         return None;
@@ -698,6 +1081,17 @@ Status: active
 ";
 
     #[test]
+    /**
+     * Verifies that a realistic numbered listing is parsed into rules.
+     *
+     * # Arguments
+     *
+     * This function takes no arguments.
+     *
+     * # Returns
+     *
+     * This function returns no value.
+     */
     fn parses_a_realistic_numbered_listing() {
         let parsed = parse_status_numbered(ACTIVE);
         assert!(parsed.active);
@@ -716,6 +1110,17 @@ Status: active
     }
 
     #[test]
+    /**
+     * Verifies that a comma-separated port list is parsed.
+     *
+     * # Arguments
+     *
+     * This function takes no arguments.
+     *
+     * # Returns
+     *
+     * This function returns no value.
+     */
     fn parses_a_port_list() {
         let rule = &parse_status_numbered(ACTIVE).rules[1];
         assert_eq!(
@@ -725,6 +1130,17 @@ Status: active
     }
 
     #[test]
+    /**
+     * Verifies that interfaces are attached to the correct side of a rule.
+     *
+     * # Arguments
+     *
+     * This function takes no arguments.
+     *
+     * # Returns
+     *
+     * This function returns no value.
+     */
     fn parses_interfaces_on_the_correct_side() {
         let rules = parse_status_numbered(ACTIVE).rules;
         // Incoming rule: the destination interface is the one traffic arrives on.
@@ -738,6 +1154,17 @@ Status: active
     }
 
     #[test]
+    /**
+     * Verifies that forwarded rules are parsed as route rules.
+     *
+     * # Arguments
+     *
+     * This function takes no arguments.
+     *
+     * # Returns
+     *
+     * This function returns no value.
+     */
     fn parses_route_rules() {
         let rule = &parse_status_numbered(ACTIVE).rules[4];
         assert_eq!(rule.direction, Direction::Forward);
@@ -748,6 +1175,17 @@ Status: active
     }
 
     #[test]
+    /**
+     * Verifies that limit actions and comments containing spaces are parsed.
+     *
+     * # Arguments
+     *
+     * This function takes no arguments.
+     *
+     * # Returns
+     *
+     * This function returns no value.
+     */
     fn parses_limit_and_comments_with_spaces() {
         let rule = &parse_status_numbered(ACTIVE).rules[5];
         assert_eq!(rule.action, Action::Limit);
@@ -756,6 +1194,17 @@ Status: active
     }
 
     #[test]
+    /**
+     * Verifies that application profile names are parsed as ports.
+     *
+     * # Arguments
+     *
+     * This function takes no arguments.
+     *
+     * # Returns
+     *
+     * This function returns no value.
+     */
     fn parses_application_profiles() {
         let rule = &parse_status_numbered(ACTIVE).rules[6];
         assert_eq!(rule.to.port, PortSpec::App("OpenSSH".into()));
@@ -763,6 +1212,17 @@ Status: active
     }
 
     #[test]
+    /**
+     * Verifies that the `(v6)` marker is detected.
+     *
+     * # Arguments
+     *
+     * This function takes no arguments.
+     *
+     * # Returns
+     *
+     * This function returns no value.
+     */
     fn parses_ipv6_markers() {
         let rule = &parse_status_numbered(ACTIVE).rules[7];
         assert!(rule.v6);
@@ -771,6 +1231,17 @@ Status: active
     }
 
     #[test]
+    /**
+     * Verifies that the `(log)` attribute is parsed and does not leak into the From column.
+     *
+     * # Arguments
+     *
+     * This function takes no arguments.
+     *
+     * # Returns
+     *
+     * This function returns no value.
+     */
     fn parses_the_log_attribute() {
         let rule = &parse_status_numbered(ACTIVE).rules[8];
         assert_eq!(rule.log, LogMode::Log);
@@ -781,6 +1252,17 @@ Status: active
     }
 
     #[test]
+    /**
+     * Verifies that an inactive status yields no rules.
+     *
+     * # Arguments
+     *
+     * This function takes no arguments.
+     *
+     * # Returns
+     *
+     * This function returns no value.
+     */
     fn handles_inactive_firewalls() {
         let parsed = parse_status_numbered("Status: inactive\n");
         assert!(!parsed.active);
@@ -788,6 +1270,17 @@ Status: active
     }
 
     #[test]
+    /**
+     * Verifies that an active status with no rules yields an empty list.
+     *
+     * # Arguments
+     *
+     * This function takes no arguments.
+     *
+     * # Returns
+     *
+     * This function returns no value.
+     */
     fn handles_empty_rule_lists() {
         let text = "Status: active\n\n     To                         Action      From\n     --                         ------      ----\n";
         let parsed = parse_status_numbered(text);
@@ -796,6 +1289,17 @@ Status: active
     }
 
     #[test]
+    /**
+     * Verifies that a long To column without a padding gap is still parsed.
+     *
+     * # Arguments
+     *
+     * This function takes no arguments.
+     *
+     * # Returns
+     *
+     * This function returns no value.
+     */
     fn survives_a_long_to_column_that_removes_the_padding_gap() {
         // Python's `%-26s` pads but never truncates: a 26+ character To column leaves a single
         // space before the action, which is exactly what breaks byte-offset parsers.
@@ -815,6 +1319,17 @@ Status: active
     }
 
     #[test]
+    /**
+     * Verifies that unparseable rows are kept in `unparsed`.
+     *
+     * # Arguments
+     *
+     * This function takes no arguments.
+     *
+     * # Returns
+     *
+     * This function returns no value.
+     */
     fn keeps_unparseable_rows_instead_of_dropping_them() {
         // No recognisable action word, so the row cannot be understood.
         let text = "Status: active\n\n[ 1] this row makes no sense\n";
@@ -824,6 +1339,17 @@ Status: active
     }
 
     #[test]
+    /**
+     * Verifies that a protocol without a port is parsed.
+     *
+     * # Arguments
+     *
+     * This function takes no arguments.
+     *
+     * # Returns
+     *
+     * This function returns no value.
+     */
     fn parses_a_protocol_without_a_port() {
         let text = "Status: active\n\n[ 1] Anywhere/tcp ALLOW IN Anywhere\n";
         let rule = &parse_status_numbered(text).rules[0];
@@ -832,12 +1358,34 @@ Status: active
     }
 
     #[test]
+    /**
+     * Verifies that two-digit rule numbers are parsed.
+     *
+     * # Arguments
+     *
+     * This function takes no arguments.
+     *
+     * # Returns
+     *
+     * This function returns no value.
+     */
     fn parses_two_digit_rule_numbers() {
         let text = "Status: active\n\n[10] 22/tcp ALLOW IN Anywhere\n";
         assert_eq!(parse_status_numbered(text).rules[0].number, 10);
     }
 
     #[test]
+    /**
+     * Verifies that the verbose header is parsed.
+     *
+     * # Arguments
+     *
+     * This function takes no arguments.
+     *
+     * # Returns
+     *
+     * This function returns no value.
+     */
     fn parses_the_verbose_header() {
         let text = "\
 Status: active
@@ -855,6 +1403,17 @@ New profiles: skip
     }
 
     #[test]
+    /**
+     * Verifies that a full log level and logging off are parsed.
+     *
+     * # Arguments
+     *
+     * This function takes no arguments.
+     *
+     * # Returns
+     *
+     * This function returns no value.
+     */
     fn parses_a_full_log_level_and_logging_off() {
         let header = parse_status_verbose("Status: active\nLogging: on (medium)\n");
         assert_eq!(header.log_level, LogLevel::Medium);
@@ -863,6 +1422,17 @@ New profiles: skip
     }
 
     #[test]
+    /**
+     * Verifies that a risky default policy is parsed.
+     *
+     * # Arguments
+     *
+     * This function takes no arguments.
+     *
+     * # Returns
+     *
+     * This function returns no value.
+     */
     fn parses_a_risky_default_policy() {
         let header = parse_status_verbose(
             "Status: active\nDefault: allow (incoming), allow (outgoing), deny (routed)\n",
@@ -872,6 +1442,17 @@ New profiles: skip
     }
 
     #[test]
+    /**
+     * Verifies that application profile files are parsed.
+     *
+     * # Arguments
+     *
+     * This function takes no arguments.
+     *
+     * # Returns
+     *
+     * This function returns no value.
+     */
     fn parses_application_profile_files() {
         let text = "\
 [OpenSSH]
@@ -889,6 +1470,17 @@ ports=22/tcp
     }
 
     #[test]
+    /**
+     * Verifies that multi-port profiles are parsed.
+     *
+     * # Arguments
+     *
+     * This function takes no arguments.
+     *
+     * # Returns
+     *
+     * This function returns no value.
+     */
     fn parses_multi_port_profiles() {
         let text = "[Nginx Full]\nports=80,443/tcp\n";
         let profiles = parse_profile_ini(text);
@@ -897,6 +1489,17 @@ ports=22/tcp
     }
 
     #[test]
+    /**
+     * Verifies that several profiles in one file are parsed.
+     *
+     * # Arguments
+     *
+     * This function takes no arguments.
+     *
+     * # Returns
+     *
+     * This function returns no value.
+     */
     fn parses_several_profiles_from_one_file() {
         let text = "[A]\nports=1/tcp\n[B]\nports=2/udp\n";
         let profiles = parse_profile_ini(text);
@@ -905,6 +1508,17 @@ ports=22/tcp
     }
 
     #[test]
+    /**
+     * Verifies that `ufw.conf` is parsed without root.
+     *
+     * # Arguments
+     *
+     * This function takes no arguments.
+     *
+     * # Returns
+     *
+     * This function returns no value.
+     */
     fn parses_ufw_conf_without_root() {
         let text = "# /etc/ufw/ufw.conf\n#\n\nENABLED=no\n\nLOGLEVEL=low\n";
         let conf = parse_ufw_conf(text);
@@ -913,6 +1527,17 @@ ports=22/tcp
     }
 
     #[test]
+    /**
+     * Verifies that `ss` listening sockets are parsed.
+     *
+     * # Arguments
+     *
+     * This function takes no arguments.
+     *
+     * # Returns
+     *
+     * This function returns no value.
+     */
     fn parses_ss_listening_sockets() {
         let text = "\
 tcp   LISTEN 0      4096         0.0.0.0:22        0.0.0.0:*    users:((\"sshd\",pid=1234,fd=3))
@@ -928,6 +1553,17 @@ udp   UNCONN 0      0            127.0.0.1:631     0.0.0.0:*
     }
 
     #[test]
+    /**
+     * Verifies that a `[UFW BLOCK]` log line is parsed.
+     *
+     * # Arguments
+     *
+     * This function takes no arguments.
+     *
+     * # Returns
+     *
+     * This function returns no value.
+     */
     fn parses_a_ufw_block_log_line() {
         let line = "Oct 30 08:23:50 mainnet kernel: [12345.678901] [UFW BLOCK] IN=eno1 OUT= MAC=00:11:22:33:44:55 SRC=45.155.205.233 DST=192.168.1.19 LEN=60 TOS=0x00 PREC=0x00 TTL=52 ID=54321 DF PROTO=TCP SPT=51000 DPT=22 WINDOW=65535 RES=0x00 SYN URGP=0";
         let event = parse_ufw_log_line(line).expect("should parse");
@@ -940,6 +1576,17 @@ udp   UNCONN 0      0            127.0.0.1:631     0.0.0.0:*
     }
 
     #[test]
+    /**
+     * Verifies that lines without `[UFW BLOCK]` are ignored.
+     *
+     * # Arguments
+     *
+     * This function takes no arguments.
+     *
+     * # Returns
+     *
+     * This function returns no value.
+     */
     fn ignores_lines_that_are_not_ufw_blocks() {
         assert!(parse_ufw_log_line("Oct 30 08:23:50 host apparmor=\"DENIED\"").is_none());
         assert!(parse_ufw_log_line("").is_none());

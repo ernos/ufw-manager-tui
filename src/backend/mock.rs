@@ -71,6 +71,17 @@ const DEMO_PROFILES: &[(&str, &str, &str, &str)] = &[
     ),
 ];
 
+/**
+ * The mutable state behind a [`MockBackend`].
+ *
+ * # Fields
+ *
+ * * `state` (`FirewallState`) - The simulated firewall rules and header.
+ * * `history` (`Vec<Vec<String>>`) - Every command the app asked the fake
+ *   firewall to run, in order.
+ * * `profiles` (`Vec<AppProfile>`) - The demo application profiles.
+ * * `listening` (`Vec<Listening>`) - The demo listening sockets.
+ */
 struct MockState {
     state: FirewallState,
     history: Vec<Vec<String>>,
@@ -78,17 +89,54 @@ struct MockState {
     listening: Vec<Listening>,
 }
 
+/**
+ * A fake firewall used by the integration tests and by `--demo`.
+ *
+ * It implements [`Backend`] entirely in memory: commands are recorded and
+ * applied to a small, honest subset of ufw semantics, so the whole UI can be
+ * explored without root and without any chance of changing the real machine.
+ *
+ * # Fields
+ *
+ * * `inner` (`Mutex<MockState>`) - The simulated state, guarded so the backend
+ *   can be shared across threads.
+ */
 pub struct MockBackend {
     inner: Mutex<MockState>,
 }
 
 impl Default for MockBackend {
+    /**
+     * Creates the default mock backend, identical to [`MockBackend::new`].
+     *
+     * # Arguments
+     *
+     * This method takes no arguments.
+     *
+     * # Returns
+     *
+     * `MockBackend` - A backend seeded with the demo rule set.
+     */
     fn default() -> Self {
         Self::new()
     }
 }
 
 impl MockBackend {
+    /**
+     * Builds a mock backend seeded with the demo rule set, profiles and sockets.
+     *
+     * The demo status text is parsed with the real parser, so the mock exercises
+     * the same code paths as a live machine.
+     *
+     * # Arguments
+     *
+     * This method takes no arguments.
+     *
+     * # Returns
+     *
+     * `MockBackend` - A backend holding the demo state behind a mutex.
+     */
     pub fn new() -> Self {
         let state = parse::parse_status(DEMO_STATUS);
         let profiles = DEMO_PROFILES
@@ -142,7 +190,22 @@ impl MockBackend {
         }
     }
 
-    /// The commands the app asked the "firewall" to run, in order. Asserted on by the tests.
+    /**
+     * The commands the app asked the "firewall" to run, in order.
+     *
+     * Asserted on by the tests, which check the exact argument vectors the UI
+     * produced.
+     *
+     * # Arguments
+     *
+     * * `self` (`&MockBackend`) - The backend whose history is read; it is not
+     *   modified.
+     *
+     * # Returns
+     *
+     * `Vec<Vec<String>>` - A clone of the recorded argument vectors, or an empty
+     * vector when the mutex is poisoned.
+     */
     pub fn history(&self) -> Vec<Vec<String>> {
         self.inner
             .lock()
@@ -152,18 +215,64 @@ impl MockBackend {
 }
 
 impl Backend for MockBackend {
+    /**
+     * Implements [`Backend::label`] with a fixed demo-mode description.
+     *
+     * # Arguments
+     *
+     * * `self` (`&MockBackend`) - The backend being queried; it is not modified.
+     *
+     * # Returns
+     *
+     * `String` - The constant text `demo mode (nothing is applied)`.
+     */
     fn label(&self) -> String {
         "demo mode (nothing is applied)".to_string()
     }
 
+    /**
+     * Implements [`Backend::is_root`], always reporting root.
+     *
+     * # Arguments
+     *
+     * * `self` (`&MockBackend`) - The backend being queried; it is not modified.
+     *
+     * # Returns
+     *
+     * `bool` - Always `true`, so the demo UI is fully usable.
+     */
     fn is_root(&self) -> bool {
         true
     }
 
+    /**
+     * Implements [`Backend::can_write`], always allowing writes.
+     *
+     * # Arguments
+     *
+     * * `self` (`&MockBackend`) - The backend being queried; it is not modified.
+     *
+     * # Returns
+     *
+     * `bool` - Always `true`; nothing is applied to the real machine.
+     */
     fn can_write(&self) -> bool {
         true
     }
 
+    /**
+     * Implements [`Backend::read_state`] by cloning the in-memory state.
+     *
+     * # Arguments
+     *
+     * * `self` (`&MockBackend`) - The backend being read; its mutex is locked but
+     *   the state is not modified.
+     *
+     * # Returns
+     *
+     * `Result<FirewallState, BackendError>` - A clone of the current mock state,
+     * or an `Io` error when the mutex is poisoned.
+     */
     fn read_state(&self) -> Result<FirewallState, BackendError> {
         self.inner
             .lock()
@@ -171,6 +280,18 @@ impl Backend for MockBackend {
             .map_err(|_| BackendError::Io("mock state poisoned".into()))
     }
 
+    /**
+     * Implements [`Backend::app_profiles`] with the built-in demo profiles.
+     *
+     * # Arguments
+     *
+     * * `self` (`&MockBackend`) - The backend being read; it is not modified.
+     *
+     * # Returns
+     *
+     * `Result<Vec<AppProfile>, BackendError>` - A clone of the demo profiles, or
+     * an empty vector if the mutex is poisoned.
+     */
     fn app_profiles(&self) -> Result<Vec<AppProfile>, BackendError> {
         Ok(self
             .inner
@@ -179,6 +300,18 @@ impl Backend for MockBackend {
             .unwrap_or_default())
     }
 
+    /**
+     * Implements [`Backend::listening`] with the built-in demo sockets.
+     *
+     * # Arguments
+     *
+     * * `self` (`&MockBackend`) - The backend being read; it is not modified.
+     *
+     * # Returns
+     *
+     * `Result<Vec<Listening>, BackendError>` - A clone of the demo sockets, or an
+     * empty vector if the mutex is poisoned.
+     */
     fn listening(&self) -> Result<Vec<Listening>, BackendError> {
         Ok(self
             .inner
@@ -187,6 +320,23 @@ impl Backend for MockBackend {
             .unwrap_or_default())
     }
 
+    /**
+     * Implements [`Backend::counters`] with deterministic fake numbers.
+     *
+     * Rules with an explicit port list get 1234 hits and every other rule gets
+     * 42, so the counters column can be exercised in demos.
+     *
+     * # Arguments
+     *
+     * * `self` (`&MockBackend`) - The backend being queried; it is not modified.
+     * * `rules` (`&[Rule]`) - The rules to invent counters for; IPv6 and route
+     *   rules are skipped.
+     *
+     * # Returns
+     *
+     * `Result<HitCounters, BackendError>` - Always `Ok` with `reliable` set and a
+     * `demo counters` note.
+     */
     fn counters(&self, rules: &[Rule]) -> Result<HitCounters, BackendError> {
         // Deterministic, obviously fake numbers so the column can be exercised in demos.
         let mut per_rule = std::collections::BTreeMap::new();
@@ -205,6 +355,21 @@ impl Backend for MockBackend {
         })
     }
 
+    /**
+     * Implements [`Backend::run`] by recording the command and applying it to
+     * the in-memory state.
+     *
+     * # Arguments
+     *
+     * * `self` (`&MockBackend`) - The backend being mutated; its history and
+     *   state are updated.
+     * * `args` (`&[String]`) - The ufw argument vector to simulate.
+     *
+     * # Returns
+     *
+     * `Result<CmdOutput, BackendError>` - A successful output describing the
+     * simulated command, or an `Io` error when the mutex is poisoned.
+     */
     fn run(&self, args: &[String]) -> Result<CmdOutput, BackendError> {
         let mut inner = self
             .inner
@@ -220,6 +385,19 @@ impl Backend for MockBackend {
         })
     }
 
+    /**
+     * Implements [`Backend::dry_run`] without touching the mock state.
+     *
+     * # Arguments
+     *
+     * * `self` (`&MockBackend`) - The backend being queried; it is not modified.
+     * * `args` (`&[String]`) - The ufw argument vector to describe.
+     *
+     * # Returns
+     *
+     * `Result<CmdOutput, BackendError>` - Always `Ok`, with the `--dry-run`
+     * prefix added to the echoed argv.
+     */
     fn dry_run(&self, args: &[String]) -> Result<CmdOutput, BackendError> {
         Ok(CmdOutput {
             argv: crate::backend::with_dry_run(args),
@@ -232,14 +410,48 @@ impl Backend for MockBackend {
         })
     }
 
+    /**
+     * Implements [`Backend::ssh_port`] with the fixed demo port 22.
+     *
+     * # Arguments
+     *
+     * * `self` (`&MockBackend`) - The backend being queried; it is not modified.
+     *
+     * # Returns
+     *
+     * `u16` - Always `22`.
+     */
     fn ssh_port(&self) -> u16 {
         22
     }
 
+    /**
+     * Implements [`Backend::ssh_session`] with a local session.
+     *
+     * # Arguments
+     *
+     * * `self` (`&MockBackend`) - The backend being queried; it is not modified.
+     *
+     * # Returns
+     *
+     * `Session` - Always [`Session::local`], since the demo is not over SSH.
+     */
     fn ssh_session(&self) -> Session {
         Session::local()
     }
 
+    /**
+     * Implements [`Backend::lan`] with a fixed demo network.
+     *
+     * # Arguments
+     *
+     * * `self` (`&MockBackend`) - The backend being queried; it is not modified.
+     *
+     * # Returns
+     *
+     * `Option<LanInfo>` - `eno1` on `192.168.1.0/24`, or `None` if that literal
+     * fails to parse.
+     */
     fn lan(&self) -> Option<LanInfo> {
         Some(LanInfo {
             iface: "eno1".into(),
@@ -247,12 +459,39 @@ impl Backend for MockBackend {
         })
     }
 
+    /**
+     * Implements [`Backend::interfaces`] with a fixed demo interface list.
+     *
+     * # Arguments
+     *
+     * * `self` (`&MockBackend`) - The backend being queried; it is not modified.
+     *
+     * # Returns
+     *
+     * `Vec<String>` - `eno1`, `wlp7s0` and `wg0`.
+     */
     fn interfaces(&self) -> Vec<String> {
         vec!["eno1".into(), "wlp7s0".into(), "wg0".into()]
     }
 }
 
-/// Applies a small, honest subset of ufw semantics so the demo is interactive rather than a mock-up.
+/**
+ * Applies a small, honest subset of ufw semantics so the demo is interactive
+ * rather than a mock-up.
+ *
+ * Handles delete, insert, enable/disable, default policy, logging level and the
+ * allow/deny/reject/limit verbs; anything else is ignored.
+ *
+ * # Arguments
+ *
+ * * `state` (`&mut FirewallState`) - The simulated state, mutated in place.
+ * * `args` (`&[String]`) - The ufw argument vector to interpret.
+ *
+ * # Returns
+ *
+ * `()` - This function returns no value. Unrecognised commands are silently
+ * ignored.
+ */
 fn apply(state: &mut FirewallState, args: &[String]) {
     match args.first().map(String::as_str) {
         Some("--force") if args.get(1).map(String::as_str) == Some("delete") => {
@@ -322,13 +561,42 @@ fn apply(state: &mut FirewallState, args: &[String]) {
     }
 }
 
+/**
+ * Rewrites rule numbers so they run 1..=n in list order.
+ *
+ * # Arguments
+ *
+ * * `state` (`&mut FirewallState`) - The state whose rules are renumbered in
+ *   place.
+ *
+ * # Returns
+ *
+ * `()` - This function returns no value.
+ */
 fn renumber(state: &mut FirewallState) {
     for (index, rule) in state.rules.iter_mut().enumerate() {
         rule.number = index as u32 + 1;
     }
 }
 
-/// Best-effort reconstruction of a rule from a `ufw` argument vector, good enough for a demo.
+/**
+ * Best-effort reconstruction of a rule from a `ufw` argument vector, good enough
+ * for a demo.
+ *
+ * Understands both the long form (`allow in on eno1 proto tcp from ... port 22`)
+ * and the simple form (`allow 22/tcp`, `allow OpenSSH`). Unparseable tokens are
+ * skipped rather than rejected.
+ *
+ * # Arguments
+ *
+ * * `args` (`&[String]`) - The ufw argument vector to interpret.
+ * * `number` (`u32`) - The rule number to assign to the reconstructed rule.
+ *
+ * # Returns
+ *
+ * `Option<Rule>` - The reconstructed rule, or `None` when no action verb is
+ * present.
+ */
 pub fn rule_from_args(args: &[String], number: u32) -> Option<Rule> {
     let action_index = args
         .iter()
@@ -438,6 +706,17 @@ mod tests {
     use super::*;
 
     #[test]
+    /**
+     * Verifies that the demo status text parses into six rules with no leftovers.
+     *
+     * # Arguments
+     *
+     * This function takes no arguments.
+     *
+     * # Returns
+     *
+     * `()` - This function returns no value; it asserts and panics on failure.
+     */
     fn the_demo_state_parses_cleanly() {
         let state = parse::parse_status(DEMO_STATUS);
         assert!(state.enabled);
@@ -447,6 +726,17 @@ mod tests {
     }
 
     #[test]
+    /**
+     * Verifies that the mock backend reads state and allows writes without root.
+     *
+     * # Arguments
+     *
+     * This function takes no arguments.
+     *
+     * # Returns
+     *
+     * `()` - This function returns no value; it asserts and panics on failure.
+     */
     fn the_demo_backend_reads_without_root() {
         let backend = MockBackend::new();
         let state = backend.read_state().unwrap();
@@ -455,6 +745,17 @@ mod tests {
     }
 
     #[test]
+    /**
+     * Verifies that [`Backend::run`] appends the command to the history.
+     *
+     * # Arguments
+     *
+     * This function takes no arguments.
+     *
+     * # Returns
+     *
+     * `()` - This function returns no value; it asserts and panics on failure.
+     */
     fn run_records_commands() {
         let backend = MockBackend::new();
         backend.run(&["allow".into(), "22/tcp".into()]).unwrap();
@@ -462,6 +763,17 @@ mod tests {
     }
 
     #[test]
+    /**
+     * Verifies that an `allow` command appends a rule with the next number.
+     *
+     * # Arguments
+     *
+     * This function takes no arguments.
+     *
+     * # Returns
+     *
+     * `()` - This function returns no value; it asserts and panics on failure.
+     */
     fn adding_a_rule_appends_it() {
         let backend = MockBackend::new();
         backend.run(&["allow".into(), "8080/tcp".into()]).unwrap();
@@ -472,6 +784,17 @@ mod tests {
     }
 
     #[test]
+    /**
+     * Verifies that deleting by number removes the rule and renumbers the rest.
+     *
+     * # Arguments
+     *
+     * This function takes no arguments.
+     *
+     * # Returns
+     *
+     * `()` - This function returns no value; it asserts and panics on failure.
+     */
     fn deleting_by_number_removes_and_renumbers() {
         let backend = MockBackend::new();
         backend
@@ -490,6 +813,18 @@ mod tests {
     }
 
     #[test]
+    /**
+     * Verifies that enable, disable and default-policy commands are reflected in
+     * the mock state.
+     *
+     * # Arguments
+     *
+     * This function takes no arguments.
+     *
+     * # Returns
+     *
+     * `()` - This function returns no value; it asserts and panics on failure.
+     */
     fn enabling_and_policy_changes_are_reflected() {
         let backend = MockBackend::new();
         backend.run(&["disable".into()]).unwrap();
@@ -506,6 +841,17 @@ mod tests {
     }
 
     #[test]
+    /**
+     * Verifies that a full rule argument vector is reconstructed into a rule.
+     *
+     * # Arguments
+     *
+     * This function takes no arguments.
+     *
+     * # Returns
+     *
+     * `()` - This function returns no value; it asserts and panics on failure.
+     */
     fn rule_arguments_are_understood() {
         let rule = rule_from_args(
             &[
@@ -536,6 +882,17 @@ mod tests {
     }
 
     #[test]
+    /**
+     * Verifies that a bare application name becomes an application port spec.
+     *
+     * # Arguments
+     *
+     * This function takes no arguments.
+     *
+     * # Returns
+     *
+     * `()` - This function returns no value; it asserts and panics on failure.
+     */
     fn app_rules_are_understood() {
         let rule = rule_from_args(&["allow".into(), "OpenSSH".into()], 1).unwrap();
         assert_eq!(rule.to.port, PortSpec::App("OpenSSH".into()));

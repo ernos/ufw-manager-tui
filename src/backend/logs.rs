@@ -19,6 +19,23 @@ use crate::core::parse::parse_ufw_log_line;
 /// Entries older than this are pruned so the table cannot grow without bound.
 const RETENTION: Duration = Duration::from_secs(900);
 
+/**
+ * One aggregated row of blocked traffic.
+ *
+ * Repeated attempts from the same source to the same port and protocol are
+ * folded into a single row so a port scan reads as one line instead of
+ * thousands.
+ *
+ * # Fields
+ *
+ * * `src` (`IpAddr`) - Source address of the blocked packets.
+ * * `dst` (`IpAddr`) - Destination address of the blocked packets.
+ * * `proto` (`String`) - Lowercase protocol name, e.g. `tcp`.
+ * * `dpt` (`u16`) - Destination port.
+ * * `iface` (`String`) - Incoming interface the packets arrived on.
+ * * `count` (`u64`) - Number of packets aggregated into this row.
+ * * `last_seen` (`Instant`) - Monotonic time of the most recent packet.
+ */
 #[derive(Debug, Clone)]
 pub struct BlockRow {
     pub src: IpAddr,
@@ -31,14 +48,46 @@ pub struct BlockRow {
 }
 
 impl BlockRow {
+    /**
+     * Returns how long ago this aggregated row was last seen.
+     *
+     * # Arguments
+     *
+     * * `self` (`&BlockRow`) - The row being read; it is not modified.
+     *
+     * # Returns
+     *
+     * `Duration` - Elapsed time since `last_seen`, measured against the current
+     * monotonic clock.
+     */
     pub fn age(&self) -> Duration {
         self.last_seen.elapsed()
     }
 }
 
+/**
+ * The aggregation table shared between the reader thread and the UI.
+ *
+ * Keyed by `(source address, destination port, protocol)` so repeated attempts
+ * collapse into one [`BlockRow`].
+ */
 type Table = HashMap<(IpAddr, u16, String), BlockRow>;
 
-/// A background reader. Dropping it stops the thread.
+/**
+ * A background reader. Dropping it stops the thread.
+ *
+ * It owns the shared aggregation table, the stop flag and the reader thread
+ * handle, so the UI can poll [`BlockMonitor::rows`] while the thread keeps
+ * folding new log lines into the table.
+ *
+ * # Fields
+ *
+ * * `table` (`Arc<Mutex<Table>>`) - The aggregation table shared with the reader
+ *   thread.
+ * * `stop` (`Arc<AtomicBool>`) - Flag the reader thread polls; set on drop.
+ * * `source` (`String`) - Human-readable name of the log source being read.
+ * * `handle` (`Option<JoinHandle<()>>`) - The reader thread, if it was spawned.
+ */
 pub struct BlockMonitor {
     table: Arc<Mutex<Table>>,
     stop: Arc<AtomicBool>,
@@ -47,6 +96,27 @@ pub struct BlockMonitor {
 }
 
 impl BlockMonitor {
+    /**
+     * Starts the background reader thread and returns a handle to its table.
+     *
+     * When `log_path` is `Some`, a thread tails that file from its current end;
+     * when it is `None`, a thread follows `journalctl -k -f`. If the thread
+     * cannot be spawned the monitor still exists but stays empty.
+     *
+     * # Arguments
+     *
+     * * `log_path` (`Option<PathBuf>`) - Path to `ufw.log` to tail, or `None` to
+     *   fall back to the kernel journal.
+     *
+     * # Returns
+     *
+     * `BlockMonitor` - A monitor owning the shared table, the stop flag and the
+     * reader thread handle.
+     *
+     * # Notes
+     *
+     * Spawns an OS thread and, in journal mode, a `journalctl` subprocess.
+     */
     pub fn start(log_path: Option<PathBuf>) -> Self {
         let table: Arc<Mutex<Table>> = Arc::new(Mutex::new(HashMap::new()));
         let stop = Arc::new(AtomicBool::new(false));
@@ -81,7 +151,22 @@ impl BlockMonitor {
         }
     }
 
-    /// Aggregated rows, busiest first.
+    /**
+     * Aggregated rows, busiest first.
+     *
+     * Rows are sorted by hit count descending, then by destination port, and
+     * truncated to 200 entries so the table stays readable during a flood.
+     *
+     * # Arguments
+     *
+     * * `self` (`&BlockMonitor`) - The monitor whose table is read; it is not
+     *   modified.
+     *
+     * # Returns
+     *
+     * `Vec<BlockRow>` - Up to 200 cloned rows, or an empty vector when the table
+     * lock is poisoned.
+     */
     pub fn rows(&self) -> Vec<BlockRow> {
         let Ok(table) = self.table.lock() else {
             return Vec::new();
@@ -92,10 +177,33 @@ impl BlockMonitor {
         rows
     }
 
+    /**
+     * Returns the human-readable name of the log source being read.
+     *
+     * # Arguments
+     *
+     * * `self` (`&BlockMonitor`) - The monitor being read; it is not modified.
+     *
+     * # Returns
+     *
+     * `&str` - Either the log file path or `journalctl -k`.
+     */
     pub fn source(&self) -> &str {
         &self.source
     }
 
+    /**
+     * Sums the hit counts of every aggregated row.
+     *
+     * # Arguments
+     *
+     * * `self` (`&BlockMonitor`) - The monitor being read; it is not modified.
+     *
+     * # Returns
+     *
+     * `u64` - Total blocked packets currently retained, or `0` if the table lock
+     * is poisoned.
+     */
     pub fn total(&self) -> u64 {
         self.table
             .lock()
@@ -105,6 +213,23 @@ impl BlockMonitor {
 }
 
 impl Drop for BlockMonitor {
+    /**
+     * Signals the reader thread to stop when the monitor goes out of scope.
+     *
+     * # Arguments
+     *
+     * * `self` (`&mut BlockMonitor`) - The monitor being dropped; its stop flag
+     *   is set and the thread handle is released.
+     *
+     * # Returns
+     *
+     * `()` - This function returns no value.
+     *
+     * # Notes
+     *
+     * The thread is deliberately not joined: a blocked read on a pipe can take a
+     * while, and the thread only holds an `Arc`, so it exits at its next poll.
+     */
     fn drop(&mut self) {
         self.stop.store(true, Ordering::Relaxed);
         // Do not join: a blocked read on a pipe can take a while, and the thread only holds an
@@ -113,6 +238,24 @@ impl Drop for BlockMonitor {
     }
 }
 
+/**
+ * Parses one log line and folds it into the aggregation table.
+ *
+ * Lines that are not UFW block events are ignored. Entries older than
+ * [`RETENTION`] are pruned on every call, and a repeated
+ * `(source, port, protocol)` triple increments the existing row instead of
+ * adding a new one.
+ *
+ * # Arguments
+ *
+ * * `table` (`&Arc<Mutex<Table>>`) - Shared aggregation table to update.
+ * * `line` (`&str`) - One raw log line, without its trailing newline.
+ *
+ * # Returns
+ *
+ * `()` - This function returns no value. Parse failures and a poisoned lock are
+ * silently ignored.
+ */
 fn record(table: &Arc<Mutex<Table>>, line: &str) {
     let Some(event) = parse_ufw_log_line(line) else {
         return;
@@ -141,6 +284,28 @@ fn record(table: &Arc<Mutex<Table>>, line: &str) {
         });
 }
 
+/**
+ * Follows a log file from its current end until asked to stop.
+ *
+ * Only new lines are read, so a year of history is not replayed. The loop
+ * sleeps briefly when there is nothing to read and exits when `stop` is set.
+ *
+ * # Arguments
+ *
+ * * `path` (`PathBuf`) - Log file to tail.
+ * * `table` (`Arc<Mutex<Table>>`) - Shared aggregation table to update.
+ * * `stop` (`Arc<AtomicBool>`) - Flag polled between reads; `true` ends the loop.
+ *
+ * # Returns
+ *
+ * `()` - This function returns no value. A file that cannot be opened ends the
+ * thread immediately.
+ *
+ * # Notes
+ *
+ * Blocking I/O on a background thread; read errors are retried after a short
+ * sleep rather than reported.
+ */
 fn tail_file(path: PathBuf, table: Arc<Mutex<Table>>, stop: Arc<AtomicBool>) {
     let Ok(mut file) = std::fs::File::open(&path) else {
         return;
@@ -160,6 +325,27 @@ fn tail_file(path: PathBuf, table: Arc<Mutex<Table>>, stop: Arc<AtomicBool>) {
     }
 }
 
+/**
+ * Follows the kernel journal through `journalctl -k -f` until asked to stop.
+ *
+ * The child process is killed and reaped when the loop ends, whether because
+ * `stop` was set or because the pipe closed.
+ *
+ * # Arguments
+ *
+ * * `table` (`Arc<Mutex<Table>>`) - Shared aggregation table to update.
+ * * `stop` (`Arc<AtomicBool>`) - Flag polled between lines; `true` ends the loop.
+ *
+ * # Returns
+ *
+ * `()` - This function returns no value. A failed spawn or a missing stdout pipe
+ * ends the thread immediately.
+ *
+ * # Notes
+ *
+ * Spawns a subprocess and blocks on its stdout; `LC_ALL=C` is set so the log
+ * lines match the parser.
+ */
 fn tail_journal(table: Arc<Mutex<Table>>, stop: Arc<AtomicBool>) {
     let child = Command::new("journalctl")
         .args(["-k", "-f", "-n", "200", "-o", "cat"])
@@ -191,17 +377,52 @@ fn tail_journal(table: Arc<Mutex<Table>>, stop: Arc<AtomicBool>) {
 mod tests {
     use super::*;
 
+    /**
+     * Builds a realistic `[UFW BLOCK]` kernel log line for the tests.
+     *
+     * # Arguments
+     *
+     * * `src` (`&str`) - Source address to embed.
+     * * `dpt` (`u16`) - Destination port to embed.
+     * * `proto` (`&str`) - Protocol token to embed, e.g. `TCP`.
+     *
+     * # Returns
+     *
+     * `String` - A single log line without a trailing newline.
+     */
     fn line(src: &str, dpt: u16, proto: &str) -> String {
         format!(
             "Oct 30 08:23:50 host kernel: [1.0] [UFW BLOCK] IN=eno1 OUT= MAC=aa SRC={src} DST=192.168.1.19 LEN=60 PROTO={proto} SPT=51000 DPT={dpt}"
         )
     }
 
+    /**
+     * Creates an empty aggregation table for the tests.
+     *
+     * # Arguments
+     *
+     * This function takes no arguments.
+     *
+     * # Returns
+     *
+     * `Arc<Mutex<Table>>` - A fresh, empty shared table.
+     */
     fn table() -> Arc<Mutex<Table>> {
         Arc::new(Mutex::new(HashMap::new()))
     }
 
     #[test]
+    /**
+     * Verifies that repeated attempts from one source collapse into one row.
+     *
+     * # Arguments
+     *
+     * This function takes no arguments.
+     *
+     * # Returns
+     *
+     * `()` - This function returns no value; it asserts and panics on failure.
+     */
     fn aggregates_repeated_attempts_into_one_row() {
         let table = table();
         for _ in 0..5 {
@@ -218,6 +439,17 @@ mod tests {
     }
 
     #[test]
+    /**
+     * Verifies that lines which are not UFW block events are ignored.
+     *
+     * # Arguments
+     *
+     * This function takes no arguments.
+     *
+     * # Returns
+     *
+     * `()` - This function returns no value; it asserts and panics on failure.
+     */
     fn non_block_lines_are_ignored() {
         let table = table();
         record(&table, "Oct 30 08:23:50 host apparmor=\"DENIED\"");
@@ -225,6 +457,18 @@ mod tests {
     }
 
     #[test]
+    /**
+     * Verifies that [`BlockMonitor::rows`] sorts busiest first and that
+     * [`BlockMonitor::total`] sums every row.
+     *
+     * # Arguments
+     *
+     * This function takes no arguments.
+     *
+     * # Returns
+     *
+     * `()` - This function returns no value; it asserts and panics on failure.
+     */
     fn rows_come_back_busiest_first() {
         let table = table();
         record(&table, &line("1.2.3.4", 22, "TCP"));
@@ -243,6 +487,17 @@ mod tests {
     }
 
     #[test]
+    /**
+     * Verifies that starting a monitor on a nonexistent log file is harmless.
+     *
+     * # Arguments
+     *
+     * This function takes no arguments.
+     *
+     * # Returns
+     *
+     * `()` - This function returns no value; it asserts and panics on failure.
+     */
     fn a_missing_log_source_does_not_panic() {
         let monitor = BlockMonitor::start(Some(PathBuf::from("/definitely/not/a/log")));
         assert!(monitor.rows().is_empty());

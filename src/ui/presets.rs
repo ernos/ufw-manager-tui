@@ -9,12 +9,48 @@ use ratatui::Frame;
 use crate::app::App;
 use crate::core::risk::RiskLevel;
 
+/**
+ * Draws the Presets tab: the list of one-key recipes and the footer explaining
+ * what the selected recipe will do.
+ *
+ * The area is split into a flexible list region and a fixed four-row footer.
+ *
+ * # Arguments
+ *
+ * * `frame` (`&mut Frame`) - The terminal frame the widgets are rendered into.
+ * * `area` (`Rect`) - The screen region reserved for the Presets tab.
+ * * `app` (`&App`) - The application state supplying the presets, the cursor
+ *   and the theme.
+ *
+ * # Returns
+ *
+ * This function returns no value.
+ */
 pub fn draw(frame: &mut Frame, area: Rect, app: &App) {
     let rows = Layout::vertical([Constraint::Min(5), Constraint::Length(4)]).split(area);
     draw_list(frame, rows[0], app);
     draw_footer(frame, rows[1], app);
 }
 
+/**
+ * Draws the scrollable list of recipe cards.
+ *
+ * Each card shows a selection marker, its title and a risk badge, followed by
+ * either the description of what it does or, when the recipe cannot run here,
+ * the reason it is unavailable. The selected card is highlighted and its detail
+ * text is word-wrapped to the panel width.
+ *
+ * # Arguments
+ *
+ * * `frame` (`&mut Frame`) - The terminal frame the list is rendered into.
+ * * `area` (`Rect`) - The region reserved for the recipe list.
+ * * `app` (`&App`) - The application state supplying the presets, the cursor
+ *   and the theme.
+ *
+ * # Returns
+ *
+ * This function returns no value.
+ */
 fn draw_list(frame: &mut Frame, area: Rect, app: &App) {
     let block = app.theme.titled(" recipes ");
     let width = area.width.saturating_sub(6) as usize;
@@ -64,6 +100,25 @@ fn draw_list(frame: &mut Frame, area: Rect, app: &App) {
     );
 }
 
+/**
+ * Draws the footer describing the selected recipe.
+ *
+ * For the selected card the footer lists the `ufw` commands that would run, or
+ * says there is nothing to do, or shows why the recipe cannot run. It always
+ * ends with a reminder that ENTER applies the recipe through the usual dry-run
+ * and confirmation. When no recipe is selected a short explanation is drawn.
+ *
+ * # Arguments
+ *
+ * * `frame` (`&mut Frame`) - The terminal frame the footer is rendered into.
+ * * `area` (`Rect`) - The region reserved for the footer.
+ * * `app` (`&App`) - The application state supplying the presets, the cursor,
+ *   the preset context and the theme.
+ *
+ * # Returns
+ *
+ * This function returns no value.
+ */
 fn draw_footer(frame: &mut Frame, area: Rect, app: &App) {
     let selected = app.presets.get(app.preset_cursor);
     let lines = match selected {
@@ -112,6 +167,17 @@ mod tests {
     use crate::ui::tests::demo_app;
 
     #[test]
+    /**
+     * Checks that the Presets tab lists the recipes, including the SSH one.
+     *
+     * # Arguments
+     *
+     * This function takes no arguments.
+     *
+     * # Returns
+     *
+     * This function returns no value; it fails the test on missing text.
+     */
     fn recipes_are_listed() {
         let mut app = demo_app();
         app.tab = Tab::Presets;
@@ -121,6 +187,17 @@ mod tests {
     }
 
     #[test]
+    /**
+     * Checks that the footer previews the command for the selected recipe.
+     *
+     * # Arguments
+     *
+     * This function takes no arguments.
+     *
+     * # Returns
+     *
+     * This function returns no value; it fails the test when no preview appears.
+     */
     fn the_footer_shows_the_command_before_anything_runs() {
         let mut app = demo_app();
         app.tab = Tab::Presets;
@@ -131,6 +208,18 @@ mod tests {
     }
 
     #[test]
+    /**
+     * Checks that an unavailable recipe explains why it cannot run.
+     *
+     * # Arguments
+     *
+     * This function takes no arguments.
+     *
+     * # Returns
+     *
+     * This function returns no value; it fails the test when no explanation is
+     * rendered.
+     */
     fn an_unavailable_recipe_explains_why() {
         let mut app = demo_app();
         app.tab = Tab::Presets;

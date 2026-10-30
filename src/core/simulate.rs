@@ -13,8 +13,25 @@ use crate::core::firewall::{FirewallState, Policy};
 use crate::core::parse::AppProfile;
 use crate::core::rule::{Action, Direction, PortSpec, Protocol, Rule, RuleDraft};
 
-/// A packet to evaluate. `direction` is relative to this machine.
 #[derive(Debug, Clone, PartialEq, Eq)]
+/**
+ * A packet to evaluate.
+ *
+ * `direction` is relative to this machine.
+ *
+ * # Fields
+ *
+ * * `direction` (`Direction`) - Which way the traffic flows.
+ * * `iface` (`Option<String>`) - The interface the packet arrives on, if known.
+ * * `protocol` (`Protocol`) - The packet's protocol.
+ * * `src` (`IpAddr`) - The source address.
+ * * `src_port` (`u16`) - The source port.
+ * * `dst` (`IpAddr`) - The destination address.
+ * * `dst_port` (`u16`) - The destination port.
+ * * `established` (`bool`) - Whether the packet belongs to an established
+ *   connection.
+ * * `loopback` (`bool`) - Whether the packet is loopback traffic.
+ */
 pub struct Packet {
     pub direction: Direction,
     pub iface: Option<String>,
@@ -28,6 +45,21 @@ pub struct Packet {
 }
 
 impl Default for Packet {
+    /**
+     * Implements `Default` as a plausible inbound SSH packet.
+     *
+     * The packet arrives on no particular interface over TCP from
+     * `192.168.1.50:51000` to `192.168.1.19:22`, and is neither established nor
+     * loopback.
+     *
+     * # Arguments
+     *
+     * This method takes no arguments.
+     *
+     * # Returns
+     *
+     * A `Packet` containing the default field values.
+     */
     fn default() -> Self {
         Self {
             direction: Direction::In,
@@ -44,6 +76,17 @@ impl Default for Packet {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+/**
+ * What produced a step in a simulation trace.
+ *
+ * # Variants
+ *
+ * * `Builtin(&'static str)` - One of ufw's built-in rules, carrying its label;
+ *   these never appear in `ufw status`.
+ * * `Rule(u32)` - A user rule, carrying its rule number (`0` for a pending
+ *   draft).
+ * * `Default` - The default policy that decided the packet.
+ */
 pub enum StepOwner {
     /// One of ufw's built-in rules, which the user never sees in `ufw status`.
     Builtin(&'static str),
@@ -52,6 +95,18 @@ pub enum StepOwner {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+/**
+ * One evaluated step in a simulation trace.
+ *
+ * # Fields
+ *
+ * * `owner` (`StepOwner`) - What produced the step.
+ * * `label` (`String`) - The human-readable description of the step.
+ * * `action` (`Action`) - The action the step would apply.
+ * * `matched` (`bool`) - Whether the step matched the packet.
+ * * `shadowed` (`bool`) - True for rules that would have matched but were
+ *   never reached.
+ */
 pub struct TraceStep {
     pub owner: StepOwner,
     pub label: String,
@@ -62,6 +117,19 @@ pub struct TraceStep {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+/**
+ * The full result of simulating one packet.
+ *
+ * # Fields
+ *
+ * * `steps` (`Vec<TraceStep>`) - Every step considered, in evaluation order.
+ * * `verdict` (`Action`) - The action that decides the packet's fate.
+ * * `winning_rule` (`Option<u32>`) - The number of the deciding rule, if any.
+ * * `decided_by_default` (`bool`) - Whether the default policy decided it.
+ * * `shadowed` (`Vec<(u32, u32)>`) - `(shadowed, shadowing)` rule pairs found.
+ * * `explanation` (`String`) - A one-sentence summary of the outcome.
+ * * `notes` (`Vec<String>`) - Extra advice, such as shadowing warnings.
+ */
 pub struct Trace {
     pub steps: Vec<TraceStep>,
     pub verdict: Action,
@@ -73,17 +141,64 @@ pub struct Trace {
 }
 
 impl Trace {
+    /**
+     * Returns whether the simulated packet would be let through.
+     *
+     * # Arguments
+     *
+     * * `&self` - The trace being inspected.
+     *
+     * # Returns
+     *
+     * `true` when the verdict permits traffic; otherwise, `false`.
+     */
     pub fn allowed(&self) -> bool {
         self.verdict.permits()
     }
 }
 
-/// Runs the simulation against the live rule set.
+/**
+ * Runs the simulation against the live rule set.
+ *
+ * This is a convenience wrapper around [`simulate_with_pending`] with no
+ * pending drafts.
+ *
+ * # Arguments
+ *
+ * * `state` (`&FirewallState`) - The firewall state whose rules are evaluated.
+ * * `profiles` (`&[AppProfile]`) - Application profiles used to resolve
+ *   profile-based rules.
+ * * `packet` (`&Packet`) - The traffic to evaluate.
+ *
+ * # Returns
+ *
+ * A `Trace` describing every step considered and the final verdict.
+ */
 pub fn simulate(state: &FirewallState, profiles: &[AppProfile], packet: &Packet) -> Trace {
     simulate_with_pending(state, profiles, &[], packet)
 }
 
-/// Runs the simulation against the live rule set plus rules that have not been applied yet.
+/**
+ * Runs the simulation against the live rule set plus rules not yet applied.
+ *
+ * Built-in rules are evaluated first, then the live and pending rules in
+ * order, and finally the default policy. Shadowed rules are detected and
+ * reported in the trace notes.
+ *
+ * # Arguments
+ *
+ * * `state` (`&FirewallState`) - The firewall state whose rules are evaluated.
+ * * `profiles` (`&[AppProfile]`) - Application profiles used to resolve
+ *   profile-based rules.
+ * * `pending` (`&[RuleDraft]`) - Draft rules to evaluate as if they were
+ *   applied, numbered `0`.
+ * * `packet` (`&Packet`) - The traffic to evaluate.
+ *
+ * # Returns
+ *
+ * A `Trace` containing the evaluated steps, the verdict, the winning rule (if
+ * any), and an explanation.
+ */
 pub fn simulate_with_pending(
     state: &FirewallState,
     profiles: &[AppProfile],
@@ -180,6 +295,24 @@ pub fn simulate_with_pending(
     finish(steps, action, None, true, packet)
 }
 
+/**
+ * Assembles the final trace once a verdict is known.
+ *
+ * The explanation is built from the traffic description, the outcome and the
+ * step that decided it.
+ *
+ * # Arguments
+ *
+ * * `steps` (`Vec<TraceStep>`) - The steps evaluated so far, in order.
+ * * `verdict` (`Action`) - The action that decides the packet's fate.
+ * * `winning_rule` (`Option<u32>`) - The number of the deciding rule, if any.
+ * * `by_default` (`bool`) - Whether the default policy decided the outcome.
+ * * `packet` (`&Packet`) - The packet being simulated, used for the wording.
+ *
+ * # Returns
+ *
+ * A `Trace` with the steps, verdict, explanation and empty notes.
+ */
 fn finish(
     steps: Vec<TraceStep>,
     verdict: Action,
@@ -216,6 +349,17 @@ fn finish(
     }
 }
 
+/**
+ * Returns the adjective used for a direction in prose.
+ *
+ * # Arguments
+ *
+ * * `direction` (`Direction`) - The direction to describe.
+ *
+ * # Returns
+ *
+ * A `&'static str` containing `incoming`, `outgoing` or `forwarding`.
+ */
 fn direction_word(direction: Direction) -> &'static str {
     match direction {
         Direction::In => "incoming",
@@ -224,6 +368,21 @@ fn direction_word(direction: Direction) -> &'static str {
     }
 }
 
+/**
+ * Describes a packet in one plain-English clause.
+ *
+ * The wording depends on the direction: incoming traffic names the source
+ * address and both ports, outgoing traffic names the destination, and
+ * forwarded traffic is described generically.
+ *
+ * # Arguments
+ *
+ * * `packet` (`&Packet`) - The packet to describe.
+ *
+ * # Returns
+ *
+ * A `String` containing the traffic description.
+ */
 fn describe_traffic(packet: &Packet) -> String {
     match packet.direction {
         Direction::In => format!(
@@ -244,6 +403,20 @@ fn describe_traffic(packet: &Packet) -> String {
     }
 }
 
+/**
+ * Builds the one-line label shown for a rule in the trace.
+ *
+ * The label combines the action, the described port selection, the source
+ * address (or `from anywhere`) and the incoming interface when present.
+ *
+ * # Arguments
+ *
+ * * `rule` (`&Rule`) - The rule to label.
+ *
+ * # Returns
+ *
+ * A `String` containing the human-readable rule label.
+ */
 fn rule_label(rule: &Rule) -> String {
     let mut out = format!(
         "{} {}",
@@ -261,6 +434,18 @@ fn rule_label(rule: &Rule) -> String {
     out
 }
 
+/**
+ * A built-in ufw rule that is evaluated before the user's rules.
+ *
+ * The predicate is kept as a function pointer so the rule list stays
+ * declarative.
+ *
+ * # Fields
+ *
+ * * `label` (`&'static str`) - The description shown in the trace.
+ * * `action` (`Action`) - The action applied when the rule matches.
+ * * `matches` (`fn(&Packet) -> bool`) - The predicate deciding a match.
+ */
 struct Builtin {
     label: &'static str,
     action: Action,
@@ -269,11 +454,39 @@ struct Builtin {
 }
 
 impl Builtin {
+    /**
+     * Evaluates the built-in rule's predicate against a packet.
+     *
+     * # Arguments
+     *
+     * * `&self` - The built-in rule being evaluated.
+     * * `packet` (`&Packet`) - The packet to test.
+     *
+     * # Returns
+     *
+     * `true` when the built-in rule matches the packet; otherwise, `false`.
+     */
     fn matches(&self, packet: &Packet) -> bool {
         (self.matches)(packet)
     }
 }
 
+/**
+ * Returns the built-in rules that apply to a packet's direction.
+ *
+ * Loopback, established connections, ICMP echo, DHCP replies and mDNS are
+ * always considered. For traffic that is not incoming, only the loopback
+ * built-in is kept, because the others only apply to traffic arriving at this
+ * host.
+ *
+ * # Arguments
+ *
+ * * `packet` (`&Packet`) - The packet whose direction selects the rule set.
+ *
+ * # Returns
+ *
+ * A `Vec<Builtin>` of the applicable built-in rules, in evaluation order.
+ */
 fn builtin_steps(packet: &Packet) -> Vec<Builtin> {
     let mut out = vec![
         Builtin {
@@ -309,7 +522,25 @@ fn builtin_steps(packet: &Packet) -> Vec<Builtin> {
     out
 }
 
-/// Does `rule` match `packet`? Pure, and the single definition of matching used everywhere.
+/**
+ * Returns whether a rule matches a packet.
+ *
+ * This is pure and is the single definition of matching used everywhere. A
+ * rule matches when the direction agrees, the interface agrees (when both
+ * sides specify one), both addresses fall inside the rule's networks, the
+ * protocol agrees, and both ports match.
+ *
+ * # Arguments
+ *
+ * * `rule` (`&Rule`) - The rule to test.
+ * * `profiles` (`&[AppProfile]`) - Application profiles used to resolve
+ *   profile-based ports.
+ * * `packet` (`&Packet`) - The packet to test.
+ *
+ * # Returns
+ *
+ * `true` when the rule matches the packet; otherwise, `false`.
+ */
 pub fn matches_rule(rule: &Rule, profiles: &[AppProfile], packet: &Packet) -> bool {
     if rule.direction != packet.direction {
         return false;
@@ -338,6 +569,26 @@ pub fn matches_rule(rule: &Rule, profiles: &[AppProfile], packet: &Packet) -> bo
     port_matches(&rule.to.port, profiles, packet.dst_port, &rule.protocol)
 }
 
+/**
+ * Returns whether a port specification matches a port and protocol.
+ *
+ * Application profiles are resolved through the supplied profile list; an
+ * unknown profile never matches, because inventing a match would be worse than
+ * missing one.
+ *
+ * # Arguments
+ *
+ * * `spec` (`&PortSpec`) - The port selection to test.
+ * * `profiles` (`&[AppProfile]`) - Application profiles used to resolve
+ *   profile-based selections.
+ * * `port` (`u16`) - The port to test.
+ * * `protocol` (`&Protocol`) - The protocol to test against the profile.
+ *
+ * # Returns
+ *
+ * `true` when the specification covers the port and protocol; otherwise,
+ * `false`.
+ */
 fn port_matches(spec: &PortSpec, profiles: &[AppProfile], port: u16, protocol: &Protocol) -> bool {
     match spec {
         PortSpec::Any => true,
@@ -364,6 +615,22 @@ mod tests {
     use super::*;
     use crate::core::rule::{Endpoint, LogMode, PortRange};
 
+    /**
+     * Builds an inbound TCP rule for use in simulation tests.
+     *
+     * # Arguments
+     *
+     * * `number` (`u32`) - The rule number to assign.
+     * * `action` (`Action`) - The action the rule applies.
+     * * `action_dir` (`Direction`) - The direction the rule applies to.
+     * * `ports` (`PortSpec`) - The destination port selection.
+     * * `from` (`Option<&str>`) - An optional source address.
+     *
+     * # Returns
+     *
+     * A `Rule` configured with the given fields and no interface, logging or
+     * comment.
+     */
     fn rule(
         number: u32,
         action: Action,
@@ -393,6 +660,17 @@ mod tests {
         }
     }
 
+    /**
+     * Builds an enabled, readable firewall state around a rule list.
+     *
+     * # Arguments
+     *
+     * * `rules` (`Vec<Rule>`) - The rules to place in the state.
+     *
+     * # Returns
+     *
+     * A `FirewallState` with the given rules and default policies.
+     */
     fn state(rules: Vec<Rule>) -> FirewallState {
         FirewallState {
             enabled: true,
@@ -402,6 +680,18 @@ mod tests {
         }
     }
 
+    /**
+     * Builds an inbound TCP packet aimed at this machine's SSH port.
+     *
+     * # Arguments
+     *
+     * * `ip` (`&str`) - The source address to parse.
+     * * `port` (`u16`) - The destination port to target.
+     *
+     * # Returns
+     *
+     * A `Packet` arriving from `ip:51000` at `192.168.1.19:port`.
+     */
     fn ssh_from(ip: &str, port: u16) -> Packet {
         Packet {
             direction: Direction::In,
@@ -417,6 +707,17 @@ mod tests {
     }
 
     #[test]
+    /**
+     * Verifies that a matching allow rule decides the packet.
+     *
+     * # Arguments
+     *
+     * This function takes no arguments.
+     *
+     * # Returns
+     *
+     * This function returns no value; it asserts the expected behavior.
+     */
     fn an_allowing_rule_wins() {
         let trace = simulate(
             &state(vec![rule(
@@ -435,6 +736,17 @@ mod tests {
     }
 
     #[test]
+    /**
+     * Verifies that the default policy decides when no rule matches.
+     *
+     * # Arguments
+     *
+     * This function takes no arguments.
+     *
+     * # Returns
+     *
+     * This function returns no value; it asserts the expected behavior.
+     */
     fn the_default_policy_decides_when_nothing_matches() {
         let mut st = state(vec![]);
         st.default_incoming = Policy::Deny;
@@ -445,6 +757,17 @@ mod tests {
     }
 
     #[test]
+    /**
+     * Verifies that a LAN-restricted rule does not admit internet traffic.
+     *
+     * # Arguments
+     *
+     * This function takes no arguments.
+     *
+     * # Returns
+     *
+     * This function returns no value; it asserts the expected behavior.
+     */
     fn a_lan_restricted_rule_does_not_let_the_internet_in() {
         let st = state(vec![rule(
             1,
@@ -458,6 +781,17 @@ mod tests {
     }
 
     #[test]
+    /**
+     * Verifies that the earliest matching rule wins.
+     *
+     * # Arguments
+     *
+     * This function takes no arguments.
+     *
+     * # Returns
+     *
+     * This function returns no value; it asserts the expected behavior.
+     */
     fn the_first_matching_rule_wins() {
         let st = state(vec![
             rule(1, Action::Deny, Direction::In, PortSpec::single(22), None),
@@ -469,6 +803,17 @@ mod tests {
     }
 
     #[test]
+    /**
+     * Verifies that loopback traffic is allowed by a built-in rule.
+     *
+     * # Arguments
+     *
+     * This function takes no arguments.
+     *
+     * # Returns
+     *
+     * This function returns no value; it asserts the expected behavior.
+     */
     fn loopback_is_allowed_before_any_rule() {
         let mut packet = ssh_from("127.0.0.1", 22);
         packet.loopback = true;
@@ -488,6 +833,17 @@ mod tests {
     }
 
     #[test]
+    /**
+     * Verifies that established connections are allowed by a built-in rule.
+     *
+     * # Arguments
+     *
+     * This function takes no arguments.
+     *
+     * # Returns
+     *
+     * This function returns no value; it asserts the expected behavior.
+     */
     fn established_connections_are_allowed() {
         let mut packet = ssh_from("203.0.113.9", 22);
         packet.established = true;
@@ -506,6 +862,17 @@ mod tests {
     }
 
     #[test]
+    /**
+     * Verifies that ICMP echo requests are allowed by a built-in rule.
+     *
+     * # Arguments
+     *
+     * This function takes no arguments.
+     *
+     * # Returns
+     *
+     * This function returns no value; it asserts the expected behavior.
+     */
     fn ping_is_allowed_by_a_builtin_rule() {
         let mut packet = ssh_from("203.0.113.9", 22);
         packet.protocol = Protocol::Icmp;
@@ -516,6 +883,17 @@ mod tests {
     }
 
     #[test]
+    /**
+     * Verifies that a broad rule shadowing a specific one is reported.
+     *
+     * # Arguments
+     *
+     * This function takes no arguments.
+     *
+     * # Returns
+     *
+     * This function returns no value; it asserts the expected behavior.
+     */
     fn detects_a_broad_rule_shadowing_a_specific_one() {
         let st = state(vec![
             rule(1, Action::Allow, Direction::In, PortSpec::single(22), None),
@@ -535,6 +913,17 @@ mod tests {
     }
 
     #[test]
+    /**
+     * Verifies that a specific rule above a broad one is not flagged.
+     *
+     * # Arguments
+     *
+     * This function takes no arguments.
+     *
+     * # Returns
+     *
+     * This function returns no value; it asserts the expected behavior.
+     */
     fn a_specific_rule_above_a_broad_one_is_not_shadowed() {
         let st = state(vec![
             rule(
@@ -553,6 +942,17 @@ mod tests {
     }
 
     #[test]
+    /**
+     * Verifies that pending drafts participate in the simulation.
+     *
+     * # Arguments
+     *
+     * This function takes no arguments.
+     *
+     * # Returns
+     *
+     * This function returns no value; it asserts the expected behavior.
+     */
     fn pending_rules_participate_without_a_number() {
         let mut st = state(vec![]);
         st.default_incoming = Policy::Deny;
@@ -563,6 +963,17 @@ mod tests {
     }
 
     #[test]
+    /**
+     * Verifies that interface restrictions are honoured.
+     *
+     * # Arguments
+     *
+     * This function takes no arguments.
+     *
+     * # Returns
+     *
+     * This function returns no value; it asserts the expected behavior.
+     */
     fn interfaces_are_respected() {
         let mut r = rule(1, Action::Allow, Direction::In, PortSpec::single(22), None);
         r.interface_in = Some("eno1".into());
@@ -575,6 +986,17 @@ mod tests {
     }
 
     #[test]
+    /**
+     * Verifies that protocol restrictions are honoured.
+     *
+     * # Arguments
+     *
+     * This function takes no arguments.
+     *
+     * # Returns
+     *
+     * This function returns no value; it asserts the expected behavior.
+     */
     fn protocols_are_respected() {
         let st = state(vec![rule(
             1,
@@ -591,6 +1013,17 @@ mod tests {
     }
 
     #[test]
+    /**
+     * Verifies that port ranges match every port they span.
+     *
+     * # Arguments
+     *
+     * This function takes no arguments.
+     *
+     * # Returns
+     *
+     * This function returns no value; it asserts the expected behavior.
+     */
     fn port_ranges_match_their_span() {
         let st = state(vec![rule(
             1,
@@ -604,6 +1037,17 @@ mod tests {
     }
 
     #[test]
+    /**
+     * Verifies that application profiles resolve through their ports.
+     *
+     * # Arguments
+     *
+     * This function takes no arguments.
+     *
+     * # Returns
+     *
+     * This function returns no value; it asserts the expected behavior.
+     */
     fn application_profiles_resolve_through_their_ports() {
         let profile = AppProfile {
             name: "OpenSSH".into(),
@@ -629,6 +1073,17 @@ mod tests {
     }
 
     #[test]
+    /**
+     * Verifies that outgoing traffic uses the outgoing default policy.
+     *
+     * # Arguments
+     *
+     * This function takes no arguments.
+     *
+     * # Returns
+     *
+     * This function returns no value; it asserts the expected behavior.
+     */
     fn outgoing_traffic_uses_the_outgoing_default() {
         let mut st = state(vec![]);
         st.default_outgoing = Policy::Allow;
@@ -640,6 +1095,17 @@ mod tests {
     }
 
     #[test]
+    /**
+     * Verifies that reject and deny produce different explanations.
+     *
+     * # Arguments
+     *
+     * This function takes no arguments.
+     *
+     * # Returns
+     *
+     * This function returns no value; it asserts the expected behavior.
+     */
     fn reject_reads_differently_from_deny() {
         let st = state(vec![rule(
             1,

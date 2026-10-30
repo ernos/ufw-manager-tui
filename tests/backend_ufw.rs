@@ -29,6 +29,22 @@ Default: deny (incoming), allow (outgoing), disabled (routed)
 New profiles: skip
 ";
 
+/**
+ * Writes an executable shell script into `dir` and returns its path.
+ *
+ * # Arguments
+ *
+ * * `dir` (`&Path`) - The directory in which to create the script.
+ * * `body` (`&str`) - The script contents, including the shebang line.
+ *
+ * # Returns
+ *
+ * `std::path::PathBuf` - The path of the created script, named `ufw`.
+ *
+ * # Panics
+ *
+ * Panics if the script cannot be written, inspected, or made executable.
+ */
 fn write_script(dir: &Path, body: &str) -> std::path::PathBuf {
     let path = dir.join("ufw");
     std::fs::write(&path, body).expect("write script");
@@ -38,6 +54,23 @@ fn write_script(dir: &Path, body: &str) -> std::path::PathBuf {
     path
 }
 
+/**
+ * Creates a fake `ufw` script that replays captured `status` output and records
+ * every invocation in a log file.
+ *
+ * # Arguments
+ *
+ * * `dir` (`&Path`) - The directory in which to create the fixtures.
+ *
+ * # Returns
+ *
+ * `(std::path::PathBuf, std::path::PathBuf)` - The path of the fake `ufw`
+ * script and the path of the call log it appends to.
+ *
+ * # Panics
+ *
+ * Panics if the fixture files cannot be written.
+ */
 fn fake_ufw(dir: &Path) -> (std::path::PathBuf, std::path::PathBuf) {
     let numbered = dir.join("numbered.txt");
     let verbose = dir.join("verbose.txt");
@@ -71,6 +104,23 @@ exit 0
 }
 
 #[test]
+/**
+ * Verifies that the backend parses a rule set through the fake `ufw`: the
+ * firewall is enabled, three rules are read, nothing is left unparsed, and the
+ * first rule's port, comment, and default incoming policy are correct.
+ *
+ * # Arguments
+ *
+ * This function takes no arguments.
+ *
+ * # Returns
+ *
+ * `()` - This function returns no value.
+ *
+ * # Panics
+ *
+ * Panics if reading state fails or any assertion about the parsed state fails.
+ */
 fn reads_a_rule_set_through_the_fake_ufw() {
     let dir = tempfile::tempdir().expect("tempdir");
     let (script, _log) = fake_ufw(dir.path());
@@ -92,6 +142,23 @@ fn reads_a_rule_set_through_the_fake_ufw() {
 }
 
 #[test]
+/**
+ * Verifies that adding a rule sends exactly the expected `ufw` arguments,
+ * including interface, source network, port, and comment.
+ *
+ * # Arguments
+ *
+ * This function takes no arguments.
+ *
+ * # Returns
+ *
+ * `()` - This function returns no value.
+ *
+ * # Panics
+ *
+ * Panics if a step cannot be run or the recorded calls lack the expected
+ * argument string.
+ */
 fn adding_a_rule_sends_exactly_the_expected_arguments() {
     let dir = tempfile::tempdir().expect("tempdir");
     let (script, log) = fake_ufw(dir.path());
@@ -116,6 +183,23 @@ fn adding_a_rule_sends_exactly_the_expected_arguments() {
 }
 
 #[test]
+/**
+ * Verifies that a write is validated with a `--dry-run` invocation first, and
+ * that the dry run reports success.
+ *
+ * # Arguments
+ *
+ * This function takes no arguments.
+ *
+ * # Returns
+ *
+ * `()` - This function returns no value.
+ *
+ * # Panics
+ *
+ * Panics if the dry run fails or the recorded calls do not start with
+ * `--dry-run allow 22/tcp`.
+ */
 fn every_write_is_validated_with_a_dry_run_first() {
     let dir = tempfile::tempdir().expect("tempdir");
     let (script, log) = fake_ufw(dir.path());
@@ -132,6 +216,23 @@ fn every_write_is_validated_with_a_dry_run_first() {
 }
 
 #[test]
+/**
+ * Verifies that deleting a rule uses its rule number together with `--force`,
+ * so `ufw` never prompts for confirmation.
+ *
+ * # Arguments
+ *
+ * This function takes no arguments.
+ *
+ * # Returns
+ *
+ * `()` - This function returns no value.
+ *
+ * # Panics
+ *
+ * Panics if reading state or running a step fails, or the recorded calls lack
+ * `--force delete 3`.
+ */
 fn deleting_a_rule_uses_the_number_and_never_prompts() {
     let dir = tempfile::tempdir().expect("tempdir");
     let (script, log) = fake_ufw(dir.path());
@@ -151,6 +252,24 @@ fn deleting_a_rule_uses_the_number_and_never_prompts() {
 }
 
 #[test]
+/**
+ * Verifies that a rejected command is reported as an unsuccessful output that
+ * preserves `ufw`'s own error text and the reconstructed command line, rather
+ * than surfacing as an I/O failure.
+ *
+ * # Arguments
+ *
+ * This function takes no arguments.
+ *
+ * # Returns
+ *
+ * `()` - This function returns no value.
+ *
+ * # Panics
+ *
+ * Panics if the command does not run, is reported as successful, or the message
+ * and command text are not as expected.
+ */
 fn a_failed_command_keeps_ufws_own_words_for_the_error_dialog() {
     let dir = tempfile::tempdir().expect("tempdir");
     let script = write_script(
@@ -170,6 +289,23 @@ fn a_failed_command_keeps_ufws_own_words_for_the_error_dialog() {
 }
 
 #[test]
+/**
+ * Verifies that `ufw`'s complaint about missing root privileges is mapped to
+ * [`BackendError::NotRoot`].
+ *
+ * # Arguments
+ *
+ * This function takes no arguments.
+ *
+ * # Returns
+ *
+ * `()` - This function returns no value.
+ *
+ * # Panics
+ *
+ * Panics if reading state unexpectedly succeeds or returns a different error
+ * variant.
+ */
 fn ufws_root_complaint_is_recognised() {
     let dir = tempfile::tempdir().expect("tempdir");
     let script = write_script(
@@ -183,6 +319,23 @@ fn ufws_root_complaint_is_recognised() {
 }
 
 #[test]
+/**
+ * Verifies that a missing `ufw` binary is reported as
+ * [`BackendError::NotFound`].
+ *
+ * # Arguments
+ *
+ * This function takes no arguments.
+ *
+ * # Returns
+ *
+ * `()` - This function returns no value.
+ *
+ * # Panics
+ *
+ * Panics if reading state unexpectedly succeeds or returns a different error
+ * variant.
+ */
 fn a_missing_ufw_binary_is_reported_clearly() {
     let backend = UfwCli::for_testing("/definitely/not/a/binary");
     let error = backend.read_state().expect_err("must fail");
@@ -190,6 +343,23 @@ fn a_missing_ufw_binary_is_reported_clearly() {
 }
 
 #[test]
+/**
+ * Verifies that an inactive firewall with no rules is read as a disabled state
+ * with an empty rule list.
+ *
+ * # Arguments
+ *
+ * This function takes no arguments.
+ *
+ * # Returns
+ *
+ * `()` - This function returns no value.
+ *
+ * # Panics
+ *
+ * Panics if reading state fails, the state is reported as enabled, or rules are
+ * present.
+ */
 fn an_empty_rule_set_reads_as_no_rules() {
     let dir = tempfile::tempdir().expect("tempdir");
     let numbered = dir.path().join("numbered.txt");

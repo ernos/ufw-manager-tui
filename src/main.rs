@@ -94,7 +94,14 @@ fn main() -> Result<()> {
     run(app)
 }
 
-/// Restores the terminal on drop, so an early return cannot leave the user without a cursor or echo.
+/**
+ * Restores the terminal on drop, so an early return cannot leave the user
+ * without a cursor or echo.
+ *
+ * The guard is created by [`TerminalGuard::enter`] and held for the lifetime of
+ * the interactive session. It has no fields; its only purpose is to run the
+ * restoration logic in its [`Drop`] implementation.
+ */
 struct TerminalGuard;
 
 impl TerminalGuard {

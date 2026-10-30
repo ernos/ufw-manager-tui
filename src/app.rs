@@ -24,6 +24,22 @@ use crate::ui::widgets::TextInput;
 use crate::watchdog::{self, Watchdog};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/**
+ * The top-level screens of the application.
+ *
+ * Each variant is one tab in the tab bar; the order of the variants matches
+ * the order of [`Tab::ALL`] and therefore the digit shortcuts.
+ *
+ * # Variants
+ *
+ * * `Home` - Firewall status and prioritized suggestions.
+ * * `Rules` - The rule list, in the order ufw evaluates it.
+ * * `Add` - The guided rule wizard.
+ * * `Test` - Packet simulation against the current rules.
+ * * `Activity` - Live blocked traffic and session changes.
+ * * `Presets` - One-key recipes for common jobs.
+ * * `Help` - Key bindings and jargon.
+ */
 pub enum Tab {
     Home,
     Rules,
@@ -45,6 +61,19 @@ impl Tab {
         Tab::Help,
     ];
 
+    /**
+     * Returns the display title of this tab.
+     *
+     * The title is the short label shown in the tab bar.
+     *
+     * # Arguments
+     *
+     * * `self` (`Tab`) - The tab whose title is wanted; the value is copied.
+     *
+     * # Returns
+     *
+     * `&'static str` - The static, human-readable tab name.
+     */
     pub fn title(self) -> &'static str {
         match self {
             Tab::Home => "Home",
@@ -57,6 +86,20 @@ impl Tab {
         }
     }
 
+    /**
+     * Returns the one-line explanation of what this tab is for.
+     *
+     * The text is shown under the tab bar so a first-time user knows what the
+     * screen answers.
+     *
+     * # Arguments
+     *
+     * * `self` (`Tab`) - The tab whose description is wanted; the value is copied.
+     *
+     * # Returns
+     *
+     * `&'static str` - The static description sentence for the tab.
+     */
     pub fn description(self) -> &'static str {
         match self {
             Tab::Home => "Is the firewall on, and how exposed is this machine?",
@@ -69,10 +112,37 @@ impl Tab {
         }
     }
 
+    /**
+     * Returns the position of this tab in [`Tab::ALL`].
+     *
+     * # Arguments
+     *
+     * * `self` (`Tab`) - The tab to locate; the value is copied.
+     *
+     * # Returns
+     *
+     * `usize` - The zero-based index of the tab, or `0` if it is somehow absent
+     * from [`Tab::ALL`].
+     */
     pub fn index(self) -> usize {
         Tab::ALL.iter().position(|t| *t == self).unwrap_or(0)
     }
 
+    /**
+     * Maps a typed digit to the tab it selects.
+     *
+     * Digits `1` through `7` select the tabs in [`Tab::ALL`] order; `0` and any
+     * non-digit character select nothing.
+     *
+     * # Arguments
+     *
+     * * `digit` (`char`) - The character the user typed.
+     *
+     * # Returns
+     *
+     * `Option<Tab>` - The matching tab, or `None` when the character is not a
+     * digit or is out of range.
+     */
     pub fn from_digit(digit: char) -> Option<Tab> {
         let index = digit.to_digit(10)?;
         if index == 0 {
@@ -81,6 +151,19 @@ impl Tab {
         Tab::ALL.get(index as usize - 1).copied()
     }
 
+    /**
+     * Returns the tab `delta` positions away, wrapping around both ends.
+     *
+     * # Arguments
+     *
+     * * `self` (`Tab`) - The tab to move from; the value is copied.
+     * * `delta` (`isize`) - The signed number of tabs to move; negative values
+     *   move backwards.
+     *
+     * # Returns
+     *
+     * `Tab` - The tab at the wrapped position.
+     */
     pub fn next(self, delta: isize) -> Tab {
         let len = Tab::ALL.len() as isize;
         let index = ((self.index() as isize + delta) % len + len) % len;
@@ -89,6 +172,18 @@ impl Tab {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/**
+ * Severity of a status line message.
+ *
+ * The level only affects presentation; it does not change control flow.
+ *
+ * # Variants
+ *
+ * * `Info` - Neutral information.
+ * * `Good` - A change succeeded.
+ * * `Warn` - Something needs attention but is not fatal.
+ * * `Error` - An operation failed.
+ */
 pub enum StatusLevel {
     Info,
     Good,
@@ -97,12 +192,34 @@ pub enum StatusLevel {
 }
 
 #[derive(Debug, Clone)]
+/**
+ * A transient message shown in the status line.
+ *
+ * # Fields
+ *
+ * * `level` (`StatusLevel`) - The severity used to colour the message.
+ * * `text` (`String`) - The message body.
+ */
 pub struct StatusMessage {
     pub level: StatusLevel,
     pub text: String,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/**
+ * The steps of the guided rule wizard.
+ *
+ * The wizard advances through these in order, with `Advanced` reachable as a
+ * side branch from the `Who` step.
+ *
+ * # Variants
+ *
+ * * `Goal` - Choose allow, block, or limit.
+ * * `Who` - Choose the source scope.
+ * * `Service` - Choose the service or port.
+ * * `Review` - Test or apply the draft.
+ * * `Advanced` - Edit individual draft fields.
+ */
 pub enum WizardStep {
     Goal,
     Who,
@@ -112,6 +229,19 @@ pub enum WizardStep {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/**
+ * Identifies which wizard draft field an open text input edits.
+ *
+ * # Variants
+ *
+ * * `Address` - The source address typed on the `Who` step.
+ * * `Port` - The destination port or port list.
+ * * `Interface` - The incoming interface name.
+ * * `Note` - The rule comment edited from the Rules tab.
+ * * `FromAddress` - The source address on the advanced step.
+ * * `FromPort` - The source port on the advanced step.
+ * * `AdvancedComment` - The comment edited on the advanced step.
+ */
 pub enum InputField {
     Address,
     Port,
@@ -122,6 +252,24 @@ pub enum InputField {
     AdvancedComment,
 }
 
+/**
+ * State of the guided rule wizard.
+ *
+ * The wizard holds the draft being built, the option cursor, an optional open
+ * text input, the last validation error, the rule being edited (if any), and
+ * the last simulation trace.
+ *
+ * # Fields
+ *
+ * * `step` (`WizardStep`) - The step currently displayed.
+ * * `draft` (`RuleDraft`) - The rule being assembled.
+ * * `cursor` (`usize`) - The selected option on the current step.
+ * * `input` (`Option<(InputField, TextInput)>`) - The open text field, if any.
+ * * `error` (`Option<String>`) - The last validation error to display.
+ * * `editing` (`Option<u32>`) - The rule number being edited, or `None` when
+ *   adding.
+ * * `trace` (`Option<Trace>`) - The result of testing the draft, if tested.
+ */
 pub struct Wizard {
     pub step: WizardStep,
     pub draft: RuleDraft,
@@ -134,6 +282,20 @@ pub struct Wizard {
 }
 
 impl Default for Wizard {
+    /**
+     * Implements [`Default`] for [`Wizard`].
+     *
+     * Produces a wizard sitting on the first step with an empty draft, no open
+     * input, no error, no edit target, and no trace.
+     *
+     * # Arguments
+     *
+     * This method takes no arguments.
+     *
+     * # Returns
+     *
+     * `Self` - A fresh [`Wizard`] in its initial state.
+     */
     fn default() -> Self {
         Self {
             step: WizardStep::Goal,
@@ -148,11 +310,41 @@ impl Default for Wizard {
 }
 
 impl Wizard {
+    /**
+     * Resets the wizard back to its default state.
+     *
+     * The whole struct is overwritten with [`Wizard::default`], discarding the
+     * draft, any open input, errors, the edit target, and the last trace.
+     *
+     * # Arguments
+     *
+     * * `&mut self` - The wizard state being reset.
+     *
+     * # Returns
+     *
+     * This method returns no value.
+     */
     fn reset(&mut self) {
         *self = Self::default();
     }
 }
 
+/**
+ * The Test tab's packet form.
+ *
+ * Holds the field cursor, the selected direction and protocol indexes, and the
+ * four text inputs that describe the packet.
+ *
+ * # Fields
+ *
+ * * `field` (`usize`) - The focused field, from 0 to 5.
+ * * `direction` (`usize`) - `0` for incoming, `1` for outgoing.
+ * * `protocol` (`usize`) - Index into [`TRAFFIC_PROTOCOLS`].
+ * * `src` (`TextInput`) - Source address.
+ * * `src_port` (`TextInput`) - Source port.
+ * * `dst` (`TextInput`) - Destination address.
+ * * `dst_port` (`TextInput`) - Destination port.
+ */
 pub struct TrafficForm {
     pub field: usize,
     pub direction: usize,
@@ -164,6 +356,20 @@ pub struct TrafficForm {
 }
 
 impl Default for TrafficForm {
+    /**
+     * Implements [`Default`] for [`TrafficForm`].
+     *
+     * Pre-fills the form with a sample packet (an external source talking to
+     * `192.168.1.19:22`) so the Test tab is immediately usable.
+     *
+     * # Arguments
+     *
+     * This method takes no arguments.
+     *
+     * # Returns
+     *
+     * `Self` - A [`TrafficForm`] with sample addresses and ports filled in.
+     */
     fn default() -> Self {
         let mut dst = TextInput::default();
         dst.set("192.168.1.19");
@@ -185,6 +391,18 @@ impl Default for TrafficForm {
     }
 }
 
+/**
+ * The confirmation dialog shown before a change is applied.
+ *
+ * # Fields
+ *
+ * * `change` (`Change`) - The change that will run if confirmed.
+ * * `pending` (`PendingChange`) - The lockout-check metadata for the change.
+ * * `dry` (`Option<CmdOutput>`) - The last successful `ufw --dry-run` output.
+ * * `guard` (`GuardVerdict`) - The lockout check result.
+ * * `meaning` (`String`) - The plain-English sentence describing the change.
+ * * `show_dry` (`bool`) - Whether the dry-run output is currently expanded.
+ */
 pub struct ConfirmModal {
     pub change: Change,
     pub pending: PendingChange,
@@ -196,24 +414,62 @@ pub struct ConfirmModal {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/**
+ * Severity of a modal message.
+ *
+ * # Variants
+ *
+ * * `Info` - Informational content.
+ * * `Warning` - Something the user should notice.
+ * * `Error` - A failure that needs attention.
+ */
 pub enum MessageLevel {
     Info,
     Warning,
     Error,
 }
 
+/**
+ * A modal that shows a title and a block of text.
+ *
+ * # Fields
+ *
+ * * `title` (`String`) - The heading shown at the top of the modal.
+ * * `body` (`Vec<String>`) - The body lines, rendered one per row.
+ * * `level` (`MessageLevel`) - The severity used to style the modal.
+ */
 pub struct MessageModal {
     pub title: String,
     pub body: Vec<String>,
     pub level: MessageLevel,
 }
 
+/**
+ * The modal currently covering the screen, if any.
+ *
+ * # Variants
+ *
+ * * `Confirm` - A confirmation dialog for a pending change.
+ * * `Message` - A read-only message dialog.
+ */
 pub enum Modal {
     Confirm(Box<ConfirmModal>),
     Message(Box<MessageModal>),
 }
 
-/// A request to leave the terminal briefly and ask `sudo` for privileges.
+/**
+ * A request to leave the terminal briefly and ask `sudo` for privileges.
+ *
+ * The event loop takes the request with [`App::take_escalation`], restores the
+ * terminal, runs `sudo -v`, and reports the outcome through
+ * [`App::after_escalation`].
+ *
+ * # Variants
+ *
+ * * `Write(Box<(Change, PendingChange)>)` - Retry a change that could not be
+ *   written once privileges are granted.
+ * * `Privileges` - Just gain privileges so the rules become visible.
+ */
 pub enum Escalation {
     /// Retry a change that could not be written.
     Write(Box<(Change, PendingChange)>),
@@ -221,6 +477,20 @@ pub enum Escalation {
     Privileges,
 }
 
+/**
+ * Startup options passed to [`App::new`].
+ *
+ * # Fields
+ *
+ * * `journal_path` (`Option<std::path::PathBuf>`) - Where the undo journal is
+ *   stored; `None` keeps it in memory only.
+ * * `yes` (`bool`) - Skip the confirmation dialog.
+ * * `readonly` (`bool`) - Refuse all writes.
+ * * `theme` (`Theme`) - The colour theme to use.
+ * * `reconcile_seconds` (`u64`) - How long the watchdog waits before reverting.
+ * * `show_counters` (`bool`) - Whether rule hit counters are displayed.
+ * * `confirm_before_apply` (`bool`) - Whether changes need confirmation.
+ */
 pub struct AppOptions {
     /// Where the undo journal lives. `None` keeps it in memory only, which is what tests want.
     pub journal_path: Option<std::path::PathBuf>,
@@ -232,6 +502,56 @@ pub struct AppOptions {
     pub confirm_before_apply: bool,
 }
 
+/**
+ * The whole application state.
+ *
+ * Holds the backend, the current firewall snapshot, derived analysis, all
+ * cursors and form state, the pending modal and change queue, and the flags
+ * that control writes.
+ *
+ * # Fields
+ *
+ * * `backend` (`Box<dyn Backend>`) - The backend used for reads and writes.
+ * * `theme` (`Theme`) - The active colour theme.
+ * * `tab` (`Tab`) - The active tab.
+ * * `state` (`FirewallState`) - The last read firewall snapshot.
+ * * `profiles` (`Vec<AppProfile>`) - Application profiles reported by ufw.
+ * * `listening` (`Vec<Listening>`) - Listening sockets found on the host.
+ * * `counters` (`HitCounters`) - Per-rule hit counters.
+ * * `blocks` (`BlockMonitor`) - The live blocked-traffic monitor.
+ * * `journal` (`Journal`) - The undo journal.
+ * * `journal_path` (`Option<std::path::PathBuf>`) - Where the journal is saved.
+ * * `suggestions` (`Vec<Suggestion>`) - Prioritized recommendations.
+ * * `shadowed` (`Vec<(u32, u32)>`) - Rule pairs where one shadows another.
+ * * `lan` (`Option<LanInfo>`) - The detected local network, if any.
+ * * `session` (`Session`) - The current login session.
+ * * `ssh_port` (`u16`) - The SSH port in use.
+ * * `hostname` (`String`) - The host name shown in the UI.
+ * * `rules_cursor` (`usize`) - Selected row on the Rules tab.
+ * * `home_cursor` (`usize`) - Selected suggestion on the Home tab.
+ * * `preset_cursor` (`usize`) - Selected preset on the Presets tab.
+ * * `activity_cursor` (`usize`) - Selected row on the Activity tab.
+ * * `help_scroll` (`u16`) - Scroll offset on the Help tab.
+ * * `filter` (`Option<TextInput>`) - The rules filter text, if set.
+ * * `filter_open` (`bool`) - Whether the filter is being edited.
+ * * `wizard` (`Wizard`) - The Add tab wizard state.
+ * * `traffic` (`TrafficForm`) - The Test tab form state.
+ * * `trace` (`Option<Trace>`) - The last simulation result.
+ * * `presets` (`Vec<PresetCard>`) - The preset cards for the current context.
+ * * `modal` (`Option<Modal>`) - The modal covering the screen, if any.
+ * * `queue` (`VecDeque<Change>`) - Changes waiting to be submitted.
+ * * `status` (`Option<StatusMessage>`) - The current status line message.
+ * * `readonly` (`bool`) - Whether writes are refused.
+ * * `yes` (`bool`) - Whether confirmation is skipped.
+ * * `confirm_before_apply` (`bool`) - Whether changes need confirmation.
+ * * `show_counters` (`bool`) - Whether hit counters are displayed.
+ * * `reconcile_seconds` (`u64`) - Watchdog delay before reverting.
+ * * `should_quit` (`bool`) - Set when the user asked to exit.
+ * * `escalation` (`Option<Escalation>`) - A pending request to run `sudo`.
+ * * `watchdog` (`Option<Watchdog>`) - The running revert watchdog, if any.
+ * * `paused` (`bool`) - Whether live activity updates are paused.
+ * * `activity_rows` (`Vec<BlockRow>`) - The rows shown on the Activity tab.
+ */
 pub struct App {
     pub backend: Box<dyn Backend>,
     pub theme: Theme,
@@ -283,7 +603,19 @@ pub struct App {
     pub activity_rows: Vec<BlockRow>,
 }
 
-/// Services offered on the wizard's third step. Application profiles are appended to this list.
+/**
+ * A service offered on the wizard's third step.
+ *
+ * The built-in entries live in [`SERVICES`]; application profiles are appended
+ * to that list at runtime.
+ *
+ * # Fields
+ *
+ * * `label` (`&'static str`) - The name shown in the option list.
+ * * `hint` (`&'static str`) - The short port hint shown beside the label.
+ * * `ports` (`&'static [u16]`) - The ports the service opens.
+ * * `protocol` (`Protocol`) - The protocol the service uses.
+ */
 pub struct ServiceChoice {
     pub label: &'static str,
     pub hint: &'static str,
@@ -328,6 +660,30 @@ pub const TRAFFIC_PROTOCOLS: [Protocol; 4] =
     [Protocol::Tcp, Protocol::Udp, Protocol::Icmp, Protocol::Any];
 
 impl App {
+    /**
+     * Builds the application state and performs the first read of the firewall.
+     *
+     * The hostname is read from `/etc/hostname` (falling back to `localhost`), the
+     * undo journal is loaded from `options.journal_path` when one is configured,
+     * and every field is initialized to an empty or default value before
+     * [`App::bootstrap`] is called.
+     *
+     * # Arguments
+     *
+     * * `backend` (`Box<dyn Backend>`) - The backend used for all reads and
+     *   writes; it is moved into the returned app.
+     * * `options` (`AppOptions`) - Startup options such as the journal path,
+     *   read-only mode, theme, and confirmation behaviour.
+     *
+     * # Returns
+     *
+     * `Self` - The fully initialized [`App`], already bootstrapped.
+     *
+     * # Notes
+     *
+     * Failures while reading `/etc/hostname` or the journal are ignored and fall
+     * back to defaults.
+     */
     pub fn new(backend: Box<dyn Backend>, options: AppOptions) -> Self {
         let hostname = std::fs::read_to_string("/etc/hostname")
             .map(|text| text.trim().to_string())
@@ -386,8 +742,27 @@ impl App {
         app
     }
 
-    /// First read. Failures are reported, never fatal: a user with a broken ufw still needs to see
-    /// why it is broken.
+    /**
+     * Performs the first read of the firewall and its surroundings.
+     *
+     * The LAN, SSH session, SSH port, block monitor, application profiles, and
+     * listening sockets are loaded, then [`App::refresh`] reads the rules.
+     * Failures are reported, never fatal: a user with a broken ufw still needs
+     * to see why it is broken.
+     *
+     * # Arguments
+     *
+     * * `&mut self` - The application state being initialized and mutated.
+     *
+     * # Returns
+     *
+     * This method returns no value.
+     *
+     * # Notes
+     *
+     * Profile and listening-socket read errors are swallowed and replaced with
+     * empty lists.
+     */
     pub fn bootstrap(&mut self) {
         self.lan = self.backend.lan();
         self.session = self.backend.ssh_session();
@@ -398,6 +773,21 @@ impl App {
         self.refresh();
     }
 
+    /**
+     * Re-reads firewall state from the backend and recomputes derived data.
+     *
+     * On success the rules, read-only flag, and hit counters are replaced. On
+     * failure the state falls back to what can be read without root and a warning
+     * status is set. Either way the analysis and cursor clamping run afterwards.
+     *
+     * # Arguments
+     *
+     * * `&mut self` - The application state being refreshed.
+     *
+     * # Returns
+     *
+     * This method returns no value.
+     */
     pub fn refresh(&mut self) {
         match self.backend.read_state() {
             Ok(state) => {
@@ -417,6 +807,19 @@ impl App {
         self.clamp_cursors();
     }
 
+    /**
+     * Recomputes suggestions, shadowed rules, and the preset library.
+     *
+     * This is a pure in-memory recomputation; it does not touch the backend.
+     *
+     * # Arguments
+     *
+     * * `&mut self` - The application state being reanalysed.
+     *
+     * # Returns
+     *
+     * This method returns no value.
+     */
     fn reanalyse(&mut self) {
         let context = self.preset_context();
         self.suggestions = risk::assess_state(
@@ -429,6 +832,21 @@ impl App {
         self.presets = presets::library(&context);
     }
 
+    /**
+     * Builds the context used to evaluate presets.
+     *
+     * The context captures the detected LAN, SSH port, interfaces, firewall
+     * enabled flag, default incoming policy, and whether SSH is already permitted.
+     *
+     * # Arguments
+     *
+     * * `&self` - The application state being read.
+     *
+     * # Returns
+     *
+     * `PresetContext` - A snapshot of the values presets need to decide what they
+     * would change.
+     */
     pub fn preset_context(&self) -> PresetContext {
         PresetContext {
             lan: self.lan.clone(),
@@ -440,6 +858,20 @@ impl App {
         }
     }
 
+    /**
+     * Keeps the list cursors inside the bounds of their lists.
+     *
+     * A cursor pointing past the end is moved to the last item, and a cursor for
+     * an empty list is reset to zero.
+     *
+     * # Arguments
+     *
+     * * `&mut self` - The application state whose cursors are clamped.
+     *
+     * # Returns
+     *
+     * This method returns no value.
+     */
     fn clamp_cursors(&mut self) {
         let rules = self.visible_rules().len();
         if rules == 0 {
@@ -455,6 +887,20 @@ impl App {
         }
     }
 
+    /**
+     * Replaces the status line message.
+     *
+     * # Arguments
+     *
+     * * `&mut self` - The application state being mutated.
+     * * `level` (`StatusLevel`) - The severity used to colour the message.
+     * * `text` (`impl Into<String>`) - The message text; anything convertible into
+     *   a `String` is accepted.
+     *
+     * # Returns
+     *
+     * This method returns no value.
+     */
     pub fn set_status(&mut self, level: StatusLevel, text: impl Into<String>) {
         self.status = Some(StatusMessage {
             level,
@@ -462,6 +908,21 @@ impl App {
         });
     }
 
+    /**
+     * Returns the rules that match the current filter.
+     *
+     * When no filter is set every rule is returned. Otherwise the rule number,
+     * action, short summary, comment, and destination port are matched
+     * case-insensitively against the filter text.
+     *
+     * # Arguments
+     *
+     * * `&self` - The application state being read.
+     *
+     * # Returns
+     *
+     * `Vec<&Rule>` - Borrowed references to the matching rules, in ufw order.
+     */
     pub fn visible_rules(&self) -> Vec<&Rule> {
         let needle = self
             .filter
@@ -489,16 +950,56 @@ impl App {
             .collect()
     }
 
+    /**
+     * Returns a copy of the rule under the rules cursor.
+     *
+     * # Arguments
+     *
+     * * `&self` - The application state being read.
+     *
+     * # Returns
+     *
+     * `Option<Rule>` - A clone of the selected rule, or `None` when the filtered
+     * list is empty or the cursor is out of range.
+     */
     pub fn selected_rule(&self) -> Option<Rule> {
         self.visible_rules()
             .get(self.rules_cursor)
             .map(|rule| (*rule).clone())
     }
 
+    /**
+     * Assesses how risky a rule is.
+     *
+     * # Arguments
+     *
+     * * `&self` - The application state being read; its application profiles are
+     *   used for the assessment.
+     * * `rule` (`&Rule`) - The rule to assess.
+     *
+     * # Returns
+     *
+     * `risk::Assessment` - The risk level and summary for the rule.
+     */
     pub fn risk_of(&self, rule: &Rule) -> risk::Assessment {
         risk::assess_rule(rule, &self.profiles)
     }
 
+    /**
+     * Returns the recorded hit count for a rule.
+     *
+     * Counters are only reported when `show_counters` is enabled.
+     *
+     * # Arguments
+     *
+     * * `&self` - The application state being read.
+     * * `rule` (`&Rule`) - The rule whose counter is wanted.
+     *
+     * # Returns
+     *
+     * `Option<u64>` - The number of packets matched, or `None` when counters are
+     * hidden or unavailable for that rule.
+     */
     pub fn hits(&self, rule: &Rule) -> Option<u64> {
         if !self.show_counters {
             return None;
@@ -510,6 +1011,23 @@ impl App {
     // key handling
     // ---------------------------------------------------------------------------------------
 
+    /**
+     * Handles a key press, routing it to the right handler.
+     *
+     * Modals, the open filter, the watchdog prompt, and text inputs take
+     * precedence over the global shortcuts. Global keys quit, toggle help, request
+     * privileges, switch tabs, refresh, and undo; everything else is forwarded to
+     * the active tab.
+     *
+     * # Arguments
+     *
+     * * `&mut self` - The application state being mutated.
+     * * `key` (`KeyEvent`) - The key event to interpret.
+     *
+     * # Returns
+     *
+     * This method returns no value.
+     */
     pub fn handle_key(&mut self, key: KeyEvent) {
         if self.modal.is_some() {
             self.handle_modal_key(key);
@@ -587,7 +1105,19 @@ impl App {
         self.dispatch_tab_key(key);
     }
 
-    /// Routes a key to the handler for the active tab.
+    /**
+     * Routes a key to the handler for the active tab.
+     *
+     * # Arguments
+     *
+     * * `&mut self` - The application state being mutated; its `tab` field
+     *   selects the handler.
+     * * `key` (`KeyEvent`) - The key event to forward.
+     *
+     * # Returns
+     *
+     * This method returns no value.
+     */
     fn dispatch_tab_key(&mut self, key: KeyEvent) {
         match self.tab {
             Tab::Home => self.handle_home_key(key),
@@ -600,8 +1130,22 @@ impl App {
         }
     }
 
-    /// True while the user is expected to type free text (an address, port, filter, note, …).
-    /// In that state the letter and digit shortcuts are unbound so a keypress is inserted literally.
+    /**
+     * Reports whether the user is expected to type free text.
+     *
+     * This is true while a wizard text field is open, or while the Test tab has
+     * one of its text fields focused. In that state the letter and digit
+     * shortcuts are unbound so a keypress is inserted literally.
+     *
+     * # Arguments
+     *
+     * * `&self` - The application state being read.
+     *
+     * # Returns
+     *
+     * `bool` - `true` when keystrokes should be treated as text input;
+     * otherwise, `false`.
+     */
     fn in_text_input(&self) -> bool {
         if self.wizard.input.is_some() {
             return true;
@@ -612,12 +1156,41 @@ impl App {
         false
     }
 
+    /**
+     * Refreshes per-tab data when a tab becomes active.
+     *
+     * Currently this reloads the activity rows when the Activity tab is entered.
+     *
+     * # Arguments
+     *
+     * * `&mut self` - The application state being mutated.
+     *
+     * # Returns
+     *
+     * This method returns no value.
+     */
     fn on_tab_entered(&mut self) {
         if self.tab == Tab::Activity {
             self.activity_rows = self.blocks.rows();
         }
     }
 
+    /**
+     * Moves a list cursor in response to a navigation key.
+     *
+     * Up and `k` wrap to the end, down and `j` wrap to the start, Home jumps to the
+     * first item, and End jumps to the last. Other keys leave the cursor alone.
+     *
+     * # Arguments
+     *
+     * * `cursor` (`&mut usize`) - The cursor to move.
+     * * `key` (`KeyCode`) - The key code that was pressed.
+     * * `len` (`usize`) - The number of items in the list.
+     *
+     * # Returns
+     *
+     * This method returns no value.
+     */
     fn move_cursor(cursor: &mut usize, key: KeyCode, len: usize) {
         if len == 0 {
             *cursor = 0;
@@ -636,6 +1209,21 @@ impl App {
         }
     }
 
+    /**
+     * Handles keys on the Help tab.
+     *
+     * Up and `k` scroll up, down and `j` scroll down, and Escape returns to the
+     * Home tab.
+     *
+     * # Arguments
+     *
+     * * `&mut self` - The application state being mutated.
+     * * `key` (`KeyEvent`) - The key event to interpret.
+     *
+     * # Returns
+     *
+     * This method returns no value.
+     */
     fn handle_help_key(&mut self, key: KeyEvent) {
         match key.code {
             KeyCode::Up | KeyCode::Char('k') => {
@@ -653,6 +1241,21 @@ impl App {
     // Home
     // ---------------------------------------------------------------------------------------
 
+    /**
+     * Handles keys on the Home tab.
+     *
+     * Navigation keys move the suggestion cursor, Space toggles the firewall,
+     * Enter or `f` applies the selected suggestion, and `l` cycles the log level.
+     *
+     * # Arguments
+     *
+     * * `&mut self` - The application state being mutated.
+     * * `key` (`KeyEvent`) - The key event to interpret.
+     *
+     * # Returns
+     *
+     * This method returns no value.
+     */
     fn handle_home_key(&mut self, key: KeyEvent) {
         match key.code {
             KeyCode::Up
@@ -670,6 +1273,20 @@ impl App {
         }
     }
 
+    /**
+     * Queues a change that turns the firewall on or off.
+     *
+     * The change is the inverse of the current state and is submitted through the
+     * normal confirmation path.
+     *
+     * # Arguments
+     *
+     * * `&mut self` - The application state being mutated.
+     *
+     * # Returns
+     *
+     * This method returns no value.
+     */
     pub fn toggle_firewall(&mut self) {
         let change = command::change_enabled(!self.state.enabled);
         let kind = if self.state.enabled {
@@ -681,6 +1298,20 @@ impl App {
         self.submit(change, pending);
     }
 
+    /**
+     * Queues a change that advances the ufw log level.
+     *
+     * The level cycles Off → Low → Medium → High → Full → Off. A warning status is
+     * set first when the new level is noisy.
+     *
+     * # Arguments
+     *
+     * * `&mut self` - The application state being mutated.
+     *
+     * # Returns
+     *
+     * This method returns no value.
+     */
     pub fn cycle_log_level(&mut self) {
         let next = match self.state.log_level {
             LogLevel::Off => LogLevel::Low,
@@ -700,6 +1331,21 @@ impl App {
         self.submit(change, pending);
     }
 
+    /**
+     * Applies the suggestion under the Home cursor.
+     *
+     * Suggestions with an automatic fix queue the matching change (turning the
+     * firewall on, fixing the default incoming policy, or enqueueing an SSH
+     * preset); suggestions without a fix only set an informational status.
+     *
+     * # Arguments
+     *
+     * * `&mut self` - The application state being mutated.
+     *
+     * # Returns
+     *
+     * This method returns no value.
+     */
     fn apply_suggestion(&mut self) {
         let Some(suggestion) = self.suggestions.get(self.home_cursor).cloned() else {
             return;
@@ -729,6 +1375,22 @@ impl App {
     // Rules
     // ---------------------------------------------------------------------------------------
 
+    /**
+     * Handles keys on the Rules tab.
+     *
+     * Navigation keys move the rules cursor; `a` adds, `e`/Enter edits, `d`
+     * deletes, `y` duplicates, `x` moves, `t` tests, `/` opens the filter, `n`
+     * edits the note, and Space shows rule details.
+     *
+     * # Arguments
+     *
+     * * `&mut self` - The application state being mutated.
+     * * `key` (`KeyEvent`) - The key event to interpret.
+     *
+     * # Returns
+     *
+     * This method returns no value.
+     */
     fn handle_rules_key(&mut self, key: KeyEvent) {
         match key.code {
             KeyCode::Up
@@ -763,6 +1425,22 @@ impl App {
         }
     }
 
+    /**
+     * Handles keys while the rules filter is open.
+     *
+     * Printable characters are inserted, editing keys move within the text, Enter
+     * closes the filter but keeps it applied, and Escape clears the filter and
+     * resets the cursor.
+     *
+     * # Arguments
+     *
+     * * `&mut self` - The application state being mutated.
+     * * `key` (`KeyEvent`) - The key event to interpret.
+     *
+     * # Returns
+     *
+     * This method returns no value.
+     */
     fn handle_filter_key(&mut self, key: KeyEvent) {
         let Some(input) = self.filter.as_mut() else {
             self.filter_open = false;
@@ -789,6 +1467,21 @@ impl App {
         }
     }
 
+    /**
+     * Opens the wizard to add a new rule.
+     *
+     * The wizard is reset, pre-filled with the detected LAN as source and incoming
+     * interface when one is known, and the action defaults to allow. The Add tab
+     * becomes active.
+     *
+     * # Arguments
+     *
+     * * `&mut self` - The application state being mutated.
+     *
+     * # Returns
+     *
+     * This method returns no value.
+     */
     pub fn start_add(&mut self) {
         self.wizard.reset();
         if let Some(lan) = &self.lan {
@@ -799,6 +1492,21 @@ impl App {
         self.tab = Tab::Add;
     }
 
+    /**
+     * Opens the wizard to edit the selected rule.
+     *
+     * The wizard starts on the review step with the rule converted to a draft and
+     * the rule number remembered as the edit target. Forward (route) rules are
+     * refused with a warning because they are read-only in this version.
+     *
+     * # Arguments
+     *
+     * * `&mut self` - The application state being mutated.
+     *
+     * # Returns
+     *
+     * This method returns no value.
+     */
     pub fn start_edit(&mut self) {
         let Some(rule) = self.selected_rule() else {
             return;
@@ -822,6 +1530,20 @@ impl App {
         self.tab = Tab::Add;
     }
 
+    /**
+     * Queues a change that deletes the selected rule.
+     *
+     * A rule that cannot be turned into a delete command sets an error status
+     * instead.
+     *
+     * # Arguments
+     *
+     * * `&mut self` - The application state being mutated.
+     *
+     * # Returns
+     *
+     * This method returns no value.
+     */
     fn delete_selected(&mut self) {
         let Some(rule) = self.selected_rule() else {
             return;
@@ -838,6 +1560,20 @@ impl App {
         self.submit(change, pending);
     }
 
+    /**
+     * Opens the wizard pre-filled with a copy of the selected rule.
+     *
+     * The copy is treated as a new rule (no edit target) so applying it adds a
+     * second rule. The Add tab becomes active and an informational status is set.
+     *
+     * # Arguments
+     *
+     * * `&mut self` - The application state being mutated.
+     *
+     * # Returns
+     *
+     * This method returns no value.
+     */
     fn duplicate_selected(&mut self) {
         let Some(rule) = self.selected_rule() else {
             return;
@@ -856,6 +1592,20 @@ impl App {
         self.set_status(StatusLevel::Info, "copied — adjust it, then apply");
     }
 
+    /**
+     * Queues a change that moves the selected rule one position up.
+     *
+     * A rule already at the top sets an informational status instead. On success
+     * the rules cursor follows the rule to its new position.
+     *
+     * # Arguments
+     *
+     * * `&mut self` - The application state being mutated.
+     *
+     * # Returns
+     *
+     * This method returns no value.
+     */
     fn move_selected(&mut self) {
         let Some(rule) = self.selected_rule() else {
             return;
@@ -880,6 +1630,20 @@ impl App {
         }
     }
 
+    /**
+     * Opens the wizard with the selected rule's note in an editable text field.
+     *
+     * The wizard starts on the review step with the note input focused and the
+     * cursor placed at the end of the existing text.
+     *
+     * # Arguments
+     *
+     * * `&mut self` - The application state being mutated.
+     *
+     * # Returns
+     *
+     * This method returns no value.
+     */
     fn edit_note(&mut self) {
         let Some(rule) = self.selected_rule() else {
             return;
@@ -898,6 +1662,21 @@ impl App {
         self.tab = Tab::Add;
     }
 
+    /**
+     * Loads the selected rule into the Test tab and simulates it.
+     *
+     * A sample packet is derived from the rule, the traffic form is filled in with
+     * it, and the resulting trace is stored so the Test tab opens with an answer
+     * already on screen.
+     *
+     * # Arguments
+     *
+     * * `&mut self` - The application state being mutated.
+     *
+     * # Returns
+     *
+     * This method returns no value.
+     */
     fn test_selected(&mut self) {
         let Some(rule) = self.selected_rule() else {
             return;
@@ -920,6 +1699,20 @@ impl App {
         self.tab = Tab::Test;
     }
 
+    /**
+     * Opens a message modal describing the selected rule.
+     *
+     * The body contains the plain-English explanation, the equivalent `ufw`
+     * command, the risk assessment, and the note.
+     *
+     * # Arguments
+     *
+     * * `&mut self` - The application state being mutated.
+     *
+     * # Returns
+     *
+     * This method returns no value.
+     */
     fn show_rule_details(&mut self) {
         let Some(rule) = self.selected_rule() else {
             return;
@@ -953,6 +1746,23 @@ impl App {
     // Add / wizard
     // ---------------------------------------------------------------------------------------
 
+    /**
+     * Returns the selectable options for the wizard's current step.
+     *
+     * Each entry is a label paired with a short hint. The service step lists the
+     * built-in services, then application profiles, then a custom-port option; the
+     * advanced step lists the editable fields with their current values.
+     *
+     * # Arguments
+     *
+     * * `&self` - The application state being read; the wizard step and draft
+     *   determine the result.
+     *
+     * # Returns
+     *
+     * `Vec<(String, String)>` - The option labels and their hints, in display
+     * order.
+     */
     pub fn wizard_options(&self) -> Vec<(String, String)> {
         match self.wizard.step {
             WizardStep::Goal => vec![
@@ -1041,6 +1851,18 @@ impl App {
         }
     }
 
+    /**
+     * Returns the question shown above the wizard options.
+     *
+     * # Arguments
+     *
+     * * `&self` - The application state being read; the wizard step selects the
+     *   question.
+     *
+     * # Returns
+     *
+     * `&'static str` - The prompt for the current wizard step.
+     */
     pub fn wizard_prompt(&self) -> &'static str {
         match self.wizard.step {
             WizardStep::Goal => "What would you like to do?",
@@ -1051,8 +1873,36 @@ impl App {
         }
     }
 
+    /**
+     * Handles keys on the Add tab's wizard.
+     *
+     * When a text field is open, characters are inserted and Enter submits the
+     * value while Escape cancels. Otherwise navigation keys move the option
+     * cursor, Escape goes back a step, Enter/Right/`l` confirms the step, and `A`
+     * jumps to the advanced step.
+     *
+     * # Arguments
+     *
+     * * `&mut self` - The application state being mutated.
+     * * `key` (`KeyEvent`) - The key event to interpret.
+     *
+     * # Returns
+     *
+     * This method returns no value.
+     */
     fn handle_wizard_key(&mut self, key: KeyEvent) {
         if self.wizard.input.is_some() {
+            /**
+             * The result of handling one key press in an open wizard text field.
+             *
+             * This is a local helper enum used only inside the wizard key handler.
+             *
+             * # Variants
+             *
+             * * `Keep` - Leave the input open and unchanged.
+             * * `Cancel` - Close the input without saving.
+             * * `Submit` - Close the input and commit the typed value.
+             */
             enum Outcome {
                 Keep,
                 Cancel,
@@ -1107,6 +1957,20 @@ impl App {
         }
     }
 
+    /**
+     * Moves the wizard back one step.
+     *
+     * Any error and trace are cleared and the cursor is reset. Going back from the
+     * first step returns to the Rules tab.
+     *
+     * # Arguments
+     *
+     * * `&mut self` - The application state being mutated.
+     *
+     * # Returns
+     *
+     * This method returns no value.
+     */
     fn wizard_back(&mut self) {
         self.wizard.error = None;
         self.wizard.trace = None;
@@ -1123,6 +1987,22 @@ impl App {
         self.wizard.cursor = 0;
     }
 
+    /**
+     * Confirms the current wizard step and advances.
+     *
+     * The goal step records the chosen action, the who step records the source or
+     * opens an address input, the service step records the chosen service, the
+     * review step tests or applies the draft, and the advanced step edits one
+     * field.
+     *
+     * # Arguments
+     *
+     * * `&mut self` - The application state being mutated.
+     *
+     * # Returns
+     *
+     * This method returns no value.
+     */
     fn wizard_confirm(&mut self) {
         self.wizard.error = None;
         match self.wizard.step {
@@ -1187,7 +2067,23 @@ impl App {
         }
     }
 
-    /// Handles the service step. Returns true when the draft is ready to review.
+    /**
+     * Handles the wizard's service step.
+     *
+     * Selecting a built-in service or an application profile fills in the
+     * draft's destination port and protocol. Selecting the custom-port row
+     * opens a port input instead.
+     *
+     * # Arguments
+     *
+     * * `&mut self` - The application state being mutated; the wizard cursor
+     *   selects the option.
+     *
+     * # Returns
+     *
+     * `bool` - `true` when the draft is ready to review, or `false` when a
+     * custom port still has to be typed.
+     */
     fn wizard_service_choice(&mut self) -> bool {
         {
             {
@@ -1227,6 +2123,24 @@ impl App {
         }
     }
 
+    /**
+     * Stores a value typed into a wizard text field.
+     *
+     * The field decides where the value goes: addresses and interfaces are
+     * normalized (empty or `any` clears them), ports are parsed and may switch the
+     * protocol to TCP, and notes become the rule comment. Invalid input sets the
+     * wizard error instead of advancing.
+     *
+     * # Arguments
+     *
+     * * `&mut self` - The application state being mutated.
+     * * `field` (`InputField`) - Which draft field the value belongs to.
+     * * `value` (`String`) - The trimmed text the user submitted.
+     *
+     * # Returns
+     *
+     * This method returns no value.
+     */
     fn commit_input(&mut self, field: InputField, value: String) {
         match field {
             InputField::Address => {
@@ -1276,6 +2190,21 @@ impl App {
         }
     }
 
+    /**
+     * Handles the advanced step by editing the field under the cursor.
+     *
+     * Toggles cycle the action, direction, protocol, and logging values; the other
+     * rows open a text input pre-filled with the current value. The final row
+     * returns to the review step.
+     *
+     * # Arguments
+     *
+     * * `&mut self` - The application state being mutated.
+     *
+     * # Returns
+     *
+     * This method returns no value.
+     */
     fn advanced_confirm(&mut self) {
         let cursor = self.wizard.cursor;
         let mut open: Option<(InputField, TextInput)> = None;
@@ -1364,6 +2293,20 @@ impl App {
         }
     }
 
+    /**
+     * Simulates the wizard draft against a sample packet.
+     *
+     * The resulting trace is stored on the wizard so the review step can show
+     * which rule would decide the packet's fate.
+     *
+     * # Arguments
+     *
+     * * `&mut self` - The application state being mutated.
+     *
+     * # Returns
+     *
+     * This method returns no value.
+     */
     fn test_wizard_draft(&mut self) {
         let packet = packet_for_draft(&self.wizard.draft, self.ssh_port);
         let trace = simulate::simulate_with_pending(
@@ -1375,6 +2318,21 @@ impl App {
         self.wizard.trace = Some(trace);
     }
 
+    /**
+     * Validates the wizard draft and queues it as an add or an edit.
+     *
+     * Validation and command-building errors are shown in the wizard instead of
+     * being submitted. On success the wizard is reset, the Rules tab becomes
+     * active, and the change goes through the normal confirmation path.
+     *
+     * # Arguments
+     *
+     * * `&mut self` - The application state being mutated.
+     *
+     * # Returns
+     *
+     * This method returns no value.
+     */
     fn apply_wizard(&mut self) {
         let draft = self.wizard.draft.clone();
         if let Err(error) = draft.validate() {
@@ -1422,6 +2380,22 @@ impl App {
     // Test tab
     // ---------------------------------------------------------------------------------------
 
+    /**
+     * Handles keys on the Test tab's traffic form.
+     *
+     * Tab/Down and BackTab/Up move between the six fields, Left/Right change the
+     * direction or protocol, Enter runs the simulation, and editing keys modify
+     * the focused text field.
+     *
+     * # Arguments
+     *
+     * * `&mut self` - The application state being mutated.
+     * * `key` (`KeyEvent`) - The key event to interpret.
+     *
+     * # Returns
+     *
+     * This method returns no value.
+     */
     fn handle_traffic_key(&mut self, key: KeyEvent) {
         match key.code {
             KeyCode::Tab | KeyCode::Down => self.traffic.field = (self.traffic.field + 1) % 6,
@@ -1447,6 +2421,21 @@ impl App {
         }
     }
 
+    /**
+     * Returns the text input for the currently focused traffic field.
+     *
+     * Fields 2 and 3 are the source address and port; every other field maps to
+     * the destination address or port.
+     *
+     * # Arguments
+     *
+     * * `&mut self` - The application state being mutated; the returned reference
+     *   borrows from it.
+     *
+     * # Returns
+     *
+     * `&mut TextInput` - A mutable reference to the focused text field.
+     */
     fn traffic_input(&mut self) -> &mut TextInput {
         match self.traffic.field {
             2 => &mut self.traffic.src,
@@ -1456,6 +2445,22 @@ impl App {
         }
     }
 
+    /**
+     * Builds a packet from the Test tab's form values.
+     *
+     * Addresses and ports are parsed and the direction and protocol are mapped to
+     * their enum values. The interface comes from the detected LAN and the packet
+     * is marked loopback when both addresses are loopback.
+     *
+     * # Arguments
+     *
+     * * `&self` - The application state being read.
+     *
+     * # Returns
+     *
+     * `Result<Packet, String>` - The packet to simulate, or a user-facing message
+     * describing the first invalid field.
+     */
     pub fn build_packet(&self) -> Result<Packet, String> {
         let src: std::net::IpAddr = self
             .traffic
@@ -1507,6 +2512,21 @@ impl App {
         })
     }
 
+    /**
+     * Simulates the packet described by the Test tab.
+     *
+     * On success the trace is stored and an informational status is set; on
+     * failure the parse error is shown as an error status. Nothing is written to
+     * the firewall.
+     *
+     * # Arguments
+     *
+     * * `&mut self` - The application state being mutated.
+     *
+     * # Returns
+     *
+     * This method returns no value.
+     */
     pub fn run_simulation(&mut self) {
         match self.build_packet() {
             Ok(packet) => {
@@ -1521,6 +2541,21 @@ impl App {
     // Activity
     // ---------------------------------------------------------------------------------------
 
+    /**
+     * Handles keys on the Activity tab.
+     *
+     * Navigation keys move the row cursor, Space pauses or resumes live updates,
+     * `B` blocks the selected source, and `c` clears the visible rows.
+     *
+     * # Arguments
+     *
+     * * `&mut self` - The application state being mutated.
+     * * `key` (`KeyEvent`) - The key event to interpret.
+     *
+     * # Returns
+     *
+     * This method returns no value.
+     */
     fn handle_activity_key(&mut self, key: KeyEvent) {
         match key.code {
             KeyCode::Up | KeyCode::Down | KeyCode::Char('k') | KeyCode::Char('j') => {
@@ -1547,6 +2582,20 @@ impl App {
         }
     }
 
+    /**
+     * Queues a deny rule for the source address of the selected activity row.
+     *
+     * The generated rule carries a comment marking it as created from the activity
+     * view. A rule that cannot be built sets an error status.
+     *
+     * # Arguments
+     *
+     * * `&mut self` - The application state being mutated.
+     *
+     * # Returns
+     *
+     * This method returns no value.
+     */
     fn block_selected_source(&mut self) {
         let Some(row) = self.activity_rows.get(self.activity_cursor).cloned() else {
             return;
@@ -1571,6 +2620,21 @@ impl App {
     // Presets
     // ---------------------------------------------------------------------------------------
 
+    /**
+     * Handles keys on the Presets tab.
+     *
+     * Navigation keys move the preset cursor and Enter enqueues the selected
+     * preset, or shows the reason it is blocked.
+     *
+     * # Arguments
+     *
+     * * `&mut self` - The application state being mutated.
+     * * `key` (`KeyEvent`) - The key event to interpret.
+     *
+     * # Returns
+     *
+     * This method returns no value.
+     */
     fn handle_presets_key(&mut self, key: KeyEvent) {
         match key.code {
             KeyCode::Up | KeyCode::Down | KeyCode::Char('k') | KeyCode::Char('j') => {
@@ -1590,6 +2654,22 @@ impl App {
         }
     }
 
+    /**
+     * Expands a preset into changes and starts working through them.
+     *
+     * The preset is evaluated against the current context. An empty result sets an
+     * informational status, a failure sets an error status, and otherwise the
+     * changes are appended to the queue and the first one is submitted.
+     *
+     * # Arguments
+     *
+     * * `&mut self` - The application state being mutated.
+     * * `preset` (`&presets::Preset`) - The preset to expand.
+     *
+     * # Returns
+     *
+     * This method returns no value.
+     */
     fn enqueue_preset(&mut self, preset: &presets::Preset) {
         let context = self.preset_context();
         match preset.changes(&context) {
@@ -1606,6 +2686,20 @@ impl App {
         }
     }
 
+    /**
+     * Submits the next queued change, if any.
+     *
+     * The change kind is inferred from its description and steps, and the change
+     * goes through the normal confirmation path.
+     *
+     * # Arguments
+     *
+     * * `&mut self` - The application state being mutated.
+     *
+     * # Returns
+     *
+     * This method returns no value.
+     */
     fn next_in_queue(&mut self) {
         let Some(change) = self.queue.pop_front() else {
             return;
@@ -1623,7 +2717,26 @@ impl App {
     // Writes
     // ---------------------------------------------------------------------------------------
 
-    /// The single choke point for every change: guard, dry-run, confirm, apply, journal.
+    /**
+     * The single choke point for every change: guard, dry-run, confirm, apply, journal.
+     *
+     * Read-only and non-writable backends are refused (or turned into an
+     * escalation request). A change that would lock the user out opens an error
+     * modal. Otherwise the change is either applied immediately or, when
+     * confirmation is enabled, dry-run step by step and shown in a confirm
+     * modal.
+     *
+     * # Arguments
+     *
+     * * `&mut self` - The application state being mutated.
+     * * `change` (`Change`) - The change to validate and submit; it is moved
+     *   into the confirm modal when confirmation is required.
+     * * `pending` (`PendingChange`) - The lockout-check metadata for the change.
+     *
+     * # Returns
+     *
+     * This method returns no value.
+     */
     pub fn submit(&mut self, change: Change, pending: PendingChange) {
         if self.readonly {
             self.set_status(
@@ -1696,6 +2809,29 @@ impl App {
         })));
     }
 
+    /**
+     * Runs every step of a change against the backend and records the result.
+     *
+     * Failures are collected and shown in an error modal, after which the state is
+     * refreshed. On success the change is journalled (and saved when a path is
+     * configured), the state is refreshed, and a success status is set. When the
+     * change could lock out an SSH session, a watchdog is spawned to revert it, and
+     * the next queued change is submitted.
+     *
+     * # Arguments
+     *
+     * * `&mut self` - The application state being mutated.
+     * * `change` (`&Change`) - The change whose steps are executed.
+     *
+     * # Returns
+     *
+     * This method returns no value.
+     *
+     * # Notes
+     *
+     * Journal save errors are ignored, and the watchdog is only spawned when the
+     * session is over SSH and the change has an inverse.
+     */
     fn apply(&mut self, change: &Change) {
         let mut failures = Vec::new();
         for step in &change.steps {
@@ -1746,6 +2882,24 @@ impl App {
         }
     }
 
+    /**
+     * Confirms the pending watchdog so the applied change is kept.
+     *
+     * The watchdog is taken out of the state, confirmed, and cleaned up, and a
+     * success status is set. Does nothing when no watchdog is pending.
+     *
+     * # Arguments
+     *
+     * * `&mut self` - The application state being mutated.
+     *
+     * # Returns
+     *
+     * This method returns no value.
+     *
+     * # Notes
+     *
+     * Errors from confirming the watchdog are ignored.
+     */
     pub fn confirm_watchdog(&mut self) {
         if let Some(watchdog) = self.watchdog.take() {
             let _ = watchdog.confirm();
@@ -1754,6 +2908,27 @@ impl App {
         }
     }
 
+    /**
+     * Reverts the most recent journal entry.
+     *
+     * The inverse steps are run directly against the backend. On success the entry
+     * is removed from the journal, the journal is saved when a path is configured,
+     * and the state is refreshed; on failure the errors are shown in a modal.
+     * Nothing happens when the journal is empty, the entry has no inverse, or the
+     * app is read-only.
+     *
+     * # Arguments
+     *
+     * * `&mut self` - The application state being mutated.
+     *
+     * # Returns
+     *
+     * This method returns no value.
+     *
+     * # Notes
+     *
+     * Journal save errors are ignored.
+     */
     pub fn undo(&mut self) {
         let Some(entry) = self.journal.last().cloned() else {
             self.set_status(StatusLevel::Info, "nothing to undo");
@@ -1799,6 +2974,22 @@ impl App {
     // Modals
     // ---------------------------------------------------------------------------------------
 
+    /**
+     * Handles keys while a modal is open.
+     *
+     * A message modal closes on Escape, Enter, or `q`. A confirm modal applies the
+     * change on Enter or `y`, toggles the dry-run output on `d`, and cancels (also
+     * clearing the queue) on Escape, `n`, or `q`.
+     *
+     * # Arguments
+     *
+     * * `&mut self` - The application state being mutated.
+     * * `key` (`KeyEvent`) - The key event to interpret.
+     *
+     * # Returns
+     *
+     * This method returns no value.
+     */
     fn handle_modal_key(&mut self, key: KeyEvent) {
         let Some(modal) = self.modal.take() else {
             return;
@@ -1826,11 +3017,43 @@ impl App {
         }
     }
 
+    /**
+     * Takes the pending escalation request, if any.
+     *
+     * The caller is expected to restore the terminal, run `sudo`, and report the
+     * outcome through [`App::after_escalation`].
+     *
+     * # Arguments
+     *
+     * * `&mut self` - The application state being mutated; the request is removed.
+     *
+     * # Returns
+     *
+     * `Option<Escalation>` - The pending request, or `None` when nothing is
+     * waiting.
+     */
     pub fn take_escalation(&mut self) -> Option<Escalation> {
         self.escalation.take()
     }
 
-    /// Called after the terminal has been restored and `sudo -v` has run.
+    /**
+     * Called after the terminal has been restored and `sudo -v` has run.
+     *
+     * A refusal sets an error status and changes nothing. On success the app
+     * leaves read-only mode, refreshes, and either retries the change that was
+     * waiting or reports that rules are now visible.
+     *
+     * # Arguments
+     *
+     * * `&mut self` - The application state being mutated.
+     * * `granted` (`bool`) - Whether `sudo` granted privileges.
+     * * `pending` (`Option<Box<(Change, PendingChange)>>`) - The change to retry,
+     *   or `None` when privileges were only requested to read the rules.
+     *
+     * # Returns
+     *
+     * This method returns no value.
+     */
     pub fn after_escalation(
         &mut self,
         granted: bool,
@@ -1858,7 +3081,21 @@ impl App {
         }
     }
 
-    /// `X`: ask sudo for privileges so the rules can be read and written.
+    /**
+     * Handles the `X` key: asks sudo for privileges so the rules can be read and written.
+     *
+     * Already-root, escalatable, and escalation-disabled backends each get their
+     * own status message; an escalatable backend records a pending
+     * [`Escalation::Privileges`] request.
+     *
+     * # Arguments
+     *
+     * * `&mut self` - The application state being mutated.
+     *
+     * # Returns
+     *
+     * This method returns no value.
+     */
     fn request_privileges(&mut self) {
         if self.backend.can_write() {
             self.set_status(StatusLevel::Info, "already running as root");
@@ -1872,6 +3109,20 @@ impl App {
         }
     }
 
+    /**
+     * Advances time-based state on each UI tick.
+     *
+     * Unless paused, the activity rows are reloaded from the block monitor. A
+     * watchdog whose countdown has reached zero is dropped.
+     *
+     * # Arguments
+     *
+     * * `&mut self` - The application state being mutated.
+     *
+     * # Returns
+     *
+     * This method returns no value.
+     */
     pub fn tick(&mut self) {
         if !self.paused {
             self.activity_rows = self.blocks.rows();
@@ -1883,10 +3134,36 @@ impl App {
         }
     }
 
+    /**
+     * Returns the seconds left before the watchdog reverts the change.
+     *
+     * # Arguments
+     *
+     * * `&self` - The application state being read.
+     *
+     * # Returns
+     *
+     * `Option<u64>` - The remaining seconds, or `None` when no watchdog is
+     * running.
+     */
     pub fn watchdog_remaining(&self) -> Option<u64> {
         self.watchdog.as_ref().map(|w| w.remaining())
     }
 
+    /**
+     * Builds the lines shown on the Help tab.
+     *
+     * Each key section contributes a title, its formatted key/label rows, and a
+     * blank separator line.
+     *
+     * # Arguments
+     *
+     * * `&self` - The application state being read.
+     *
+     * # Returns
+     *
+     * `Vec<String>` - The help text, one entry per rendered line.
+     */
     pub fn help_text(&self) -> Vec<String> {
         let mut lines = Vec::new();
         for section in crate::ui::keys::help_sections() {
@@ -1900,6 +3177,21 @@ impl App {
     }
 }
 
+/**
+ * Infers the change kind from a change's first step and description.
+ *
+ * The first step's joined arguments are matched against known keywords, with
+ * the description used to recognize deletes; anything unrecognized is treated
+ * as an add.
+ *
+ * # Arguments
+ *
+ * * `change` (`&Change`) - The change to classify.
+ *
+ * # Returns
+ *
+ * `ChangeKind` - The kind used for lockout checks and journaling.
+ */
 fn classify(change: &Change) -> ChangeKind {
     let first = change
         .steps
@@ -1923,6 +3215,21 @@ fn classify(change: &Change) -> ChangeKind {
     }
 }
 
+/**
+ * Reports whether a change needs the automatic revert watchdog.
+ *
+ * Enabling the firewall, changing the default policy, and resetting all need a
+ * watchdog because they can cut off the current SSH session.
+ *
+ * # Arguments
+ *
+ * * `change` (`&Change`) - The change to inspect.
+ *
+ * # Returns
+ *
+ * `true` when any step mentions `enable`, `default`, or `reset`; otherwise,
+ * `false`.
+ */
 fn needs_watchdog(change: &Change) -> bool {
     let text = change
         .steps
@@ -1933,8 +3240,23 @@ fn needs_watchdog(change: &Change) -> bool {
     text.contains("enable") || text.contains("default") || text.contains("reset")
 }
 
-/// The human sentence shown in the confirmation dialog. Prefer a rule explanation when the change is
-/// about a specific rule; otherwise the description already reads like a sentence.
+/**
+ * The human sentence shown in the confirmation dialog.
+ *
+ * Prefer a rule explanation when the change is about a specific rule;
+ * otherwise the description already reads like a sentence.
+ *
+ * # Arguments
+ *
+ * * `change` (`&Change`) - The change being confirmed; its steps decide the
+ *   verb used for rule changes.
+ * * `pending` (`&PendingChange`) - The metadata that may carry a draft or a
+ *   rule to explain.
+ *
+ * # Returns
+ *
+ * `String` - The sentence to display in the confirm modal.
+ */
 fn meaning_of(change: &Change, pending: &PendingChange) -> String {
     if let Some(draft) = &pending.draft {
         return explain::explain_draft(draft);
@@ -1954,6 +3276,20 @@ fn meaning_of(change: &Change, pending: &PendingChange) -> String {
     change.description.trim_end_matches('.').to_string()
 }
 
+/**
+ * Turns a backend error into a user-facing sentence.
+ *
+ * A missing `ufw` binary gets an install hint; every other error is rendered
+ * with its own display text.
+ *
+ * # Arguments
+ *
+ * * `error` (`&BackendError`) - The error to translate.
+ *
+ * # Returns
+ *
+ * `String` - The message to show in the status line or a modal.
+ */
 fn friendly_error(error: &BackendError) -> String {
     match error {
         BackendError::NotFound => {
@@ -1963,8 +3299,26 @@ fn friendly_error(error: &BackendError) -> String {
     }
 }
 
-/// Used when we cannot read rules (no root): the world-readable `ufw.conf` still tells us whether
-/// the firewall is on and how it logs.
+/**
+ * Builds a best-effort firewall state when rules cannot be read.
+ *
+ * Used when we cannot read rules (no root): the world-readable `ufw.conf` still
+ * tells us whether the firewall is on and how it logs.
+ *
+ * # Arguments
+ *
+ * This function takes no arguments.
+ *
+ * # Returns
+ *
+ * `FirewallState` - A state with the enabled flag and log level from
+ * `ufw.conf`, `rules_readable` set to `false`, and every other field at its
+ * default.
+ *
+ * # Notes
+ *
+ * A missing or unreadable `ufw.conf` is ignored and yields the defaults.
+ */
 fn read_unprivileged_state() -> FirewallState {
     let conf = std::fs::read_to_string("/etc/ufw/ufw.conf")
         .map(|text| parse_ufw_conf(&text))
@@ -1977,6 +3331,27 @@ fn read_unprivileged_state() -> FirewallState {
     }
 }
 
+/**
+ * Builds a sample packet that a rule draft would match.
+ *
+ * The destination port comes from the draft (falling back to the SSH port) and
+ * the source is an address just inside the draft's source network, so the
+ * simulation answers whether the rule covers a realistic peer.
+ *
+ * # Arguments
+ *
+ * * `draft` (`&RuleDraft`) - The draft rule to build a packet for.
+ * * `ssh_port` (`u16`) - The port to use when the draft has no single port.
+ *
+ * # Returns
+ *
+ * `Packet` - A packet shaped to exercise the draft.
+ *
+ * # Panics
+ *
+ * Panics if the hard-coded fallback address literals fail to parse, which
+ * cannot happen for the constants used here.
+ */
 fn packet_for_draft(draft: &RuleDraft, ssh_port: u16) -> Packet {
     let dst_port = draft
         .to_port
@@ -2007,8 +3382,21 @@ fn packet_for_draft(draft: &RuleDraft, ssh_port: u16) -> Packet {
     }
 }
 
-/// A sample address that sits inside `ip`'s subnet, so "does my LAN rule actually cover me?" is
-/// answerable.
+/**
+ * Returns a sample address that sits inside `ip`'s subnet.
+ *
+ * This makes "does my LAN rule actually cover me?" answerable. IPv4 addresses
+ * get their last octet incremented (wrapping, and never below 1); other
+ * addresses are returned unchanged.
+ *
+ * # Arguments
+ *
+ * * `ip` (`std::net::IpAddr`) - The network address to nudge.
+ *
+ * # Returns
+ *
+ * `std::net::IpAddr` - An address inside the same subnet as `ip`.
+ */
 fn bump(ip: std::net::IpAddr) -> std::net::IpAddr {
     match ip {
         std::net::IpAddr::V4(v4) => {
@@ -2020,6 +3408,26 @@ fn bump(ip: std::net::IpAddr) -> std::net::IpAddr {
     }
 }
 
+/**
+ * Builds a sample packet that an existing rule would match.
+ *
+ * The destination port comes from the rule (falling back to the SSH port) and
+ * the source is an address just inside the rule's source network.
+ *
+ * # Arguments
+ *
+ * * `rule` (`&Rule`) - The rule to build a packet for.
+ * * `ssh_port` (`u16`) - The port to use when the rule has no single port.
+ *
+ * # Returns
+ *
+ * `Packet` - A packet shaped to exercise the rule.
+ *
+ * # Panics
+ *
+ * Panics if the hard-coded fallback address literals fail to parse, which
+ * cannot happen for the constants used here.
+ */
 fn packet_for_rule(rule: &Rule, ssh_port: u16) -> Packet {
     let dst_port = rule
         .to
@@ -2051,11 +3459,43 @@ fn packet_for_rule(rule: &Rule, ssh_port: u16) -> Packet {
     }
 }
 
+/**
+ * Contract for replacing blank text with a fallback.
+ *
+ * Implemented for `String`; the trait has one required method, `if_empty`,
+ * with no provided methods.
+ */
 trait IfEmpty {
+    /**
+     * Declares the fallback helper used to replace blank command output.
+     *
+     * # Arguments
+     *
+     * * `self` (`String`) - The text to check; it is consumed.
+     * * `fallback` (`&str`) - The text to use when `self` is blank.
+     *
+     * # Returns
+     *
+     * `String` - Either the original text or the fallback.
+     */
     fn if_empty(self, fallback: &str) -> String;
 }
 
 impl IfEmpty for String {
+    /**
+     * Implements [`IfEmpty`] for `String`.
+     *
+     * Returns the fallback when the text is empty or only whitespace.
+     *
+     * # Arguments
+     *
+     * * `self` (`String`) - The text to check; it is consumed.
+     * * `fallback` (`&str`) - The text to use when `self` is blank.
+     *
+     * # Returns
+     *
+     * `String` - The original text when it has content, otherwise the fallback.
+     */
     fn if_empty(self, fallback: &str) -> String {
         if self.trim().is_empty() {
             fallback.to_string()

@@ -10,6 +10,24 @@ use crate::app::{App, TRAFFIC_PROTOCOLS};
 use crate::core::risk::RiskLevel;
 use crate::core::simulate::StepOwner;
 
+/**
+ * Draws the Test tab: the pretend-traffic form, the verdict and the decision
+ * trace.
+ *
+ * The area is split into a seven-row form, a three-row verdict and a flexible
+ * trace region.
+ *
+ * # Arguments
+ *
+ * * `frame` (`&mut Frame`) - The terminal frame the widgets are rendered into.
+ * * `area` (`Rect`) - The screen region reserved for the Test tab.
+ * * `app` (`&App`) - The application state supplying the traffic form, the last
+ *   trace and the theme.
+ *
+ * # Returns
+ *
+ * This function returns no value.
+ */
 pub fn draw(frame: &mut Frame, area: Rect, app: &App) {
     let rows = Layout::vertical([
         Constraint::Length(7),
@@ -22,6 +40,21 @@ pub fn draw(frame: &mut Frame, area: Rect, app: &App) {
     draw_trace(frame, rows[2], app);
 }
 
+/**
+ * Returns the style for one form field.
+ *
+ * The field currently being edited uses the selected style; every other field
+ * uses the normal text style.
+ *
+ * # Arguments
+ *
+ * * `app` (`&App`) - The application state holding the traffic form and theme.
+ * * `index` (`usize`) - The zero-based index of the field to style.
+ *
+ * # Returns
+ *
+ * The `ratatui::style::Style` to draw the field with.
+ */
 fn field_style(app: &App, index: usize) -> ratatui::style::Style {
     if app.traffic.field == index {
         app.theme.selected()
@@ -30,6 +63,23 @@ fn field_style(app: &App, index: usize) -> ratatui::style::Style {
     }
 }
 
+/**
+ * Builds the display span for one text-input field.
+ *
+ * When the field is being edited the value is split around the cursor so the
+ * character under it can be drawn as a block cursor; otherwise the plain value
+ * is shown. Either way the span carries the field's style.
+ *
+ * # Arguments
+ *
+ * * `app` (`&App`) - The application state holding the traffic form and theme.
+ * * `index` (`usize`) - The zero-based index of the field in the form.
+ * * `input` (`&crate::ui::widgets::TextInput`) - The text input to display.
+ *
+ * # Returns
+ *
+ * A `Span<'static>` containing the styled field text.
+ */
 fn input_span(app: &App, index: usize, input: &crate::ui::widgets::TextInput) -> Span<'static> {
     let style = field_style(app, index);
     if app.traffic.field == index {
@@ -40,6 +90,24 @@ fn input_span(app: &App, index: usize, input: &crate::ui::widgets::TextInput) ->
     }
 }
 
+/**
+ * Draws the pretend-traffic form.
+ *
+ * Shows the direction and protocol selectors, the interface the packet would
+ * travel over, the source and destination address and port inputs, and a line
+ * of key hints. The field currently being edited is highlighted.
+ *
+ * # Arguments
+ *
+ * * `frame` (`&mut Frame`) - The terminal frame the form is rendered into.
+ * * `area` (`Rect`) - The region reserved for the form.
+ * * `app` (`&App`) - The application state supplying the traffic form, the LAN
+ *   interface and the theme.
+ *
+ * # Returns
+ *
+ * This function returns no value.
+ */
 fn draw_form(frame: &mut Frame, area: Rect, app: &App) {
     let block = app.theme.titled(" pretend traffic ");
 
@@ -90,6 +158,23 @@ fn draw_form(frame: &mut Frame, area: Rect, app: &App) {
     frame.render_widget(Paragraph::new(lines).block(block), area);
 }
 
+/**
+ * Draws the simulation verdict.
+ *
+ * Shows `ALLOWED` or `BLOCKED` in the matching risk style followed by the
+ * trace's explanation. When no simulation has been run yet, a prompt explaining
+ * that nothing is transmitted is drawn instead.
+ *
+ * # Arguments
+ *
+ * * `frame` (`&mut Frame`) - The terminal frame the verdict is rendered into.
+ * * `area` (`Rect`) - The region reserved for the verdict.
+ * * `app` (`&App`) - The application state supplying the last trace and theme.
+ *
+ * # Returns
+ *
+ * This function returns no value.
+ */
 fn draw_verdict(frame: &mut Frame, area: Rect, app: &App) {
     let block = app.theme.titled(" result ");
 
@@ -130,6 +215,25 @@ fn draw_verdict(frame: &mut Frame, area: Rect, app: &App) {
     );
 }
 
+/**
+ * Draws the ordered trace of how the packet was evaluated.
+ *
+ * Each step shows its position, its owner (built-in, pending draft, rule number
+ * or default policy), the action, an ellipsized label and a `MATCHED` marker;
+ * evaluation stops at the first match. Steps that did not match are dropped once
+ * the pane is full. Any notes from the trace are appended as wrapped paragraphs.
+ * A short explanation is drawn when no trace exists yet.
+ *
+ * # Arguments
+ *
+ * * `frame` (`&mut Frame`) - The terminal frame the trace is rendered into.
+ * * `area` (`Rect`) - The region reserved for the trace.
+ * * `app` (`&App`) - The application state supplying the last trace and theme.
+ *
+ * # Returns
+ *
+ * This function returns no value.
+ */
 fn draw_trace(frame: &mut Frame, area: Rect, app: &App) {
     let block = app.theme.titled(" how the decision was made, in order ");
 
@@ -213,6 +317,18 @@ mod tests {
     use crate::ui::tests::demo_app;
 
     #[test]
+    /**
+     * Checks that a packet matching an allow rule is reported as allowed.
+     *
+     * # Arguments
+     *
+     * This function takes no arguments.
+     *
+     * # Returns
+     *
+     * This function returns no value; it fails the test when the verdict is
+     * missing.
+     */
     fn the_simulator_explains_an_allowed_packet() {
         let mut app = demo_app();
         app.tab = Tab::Test;
@@ -224,6 +340,18 @@ mod tests {
     }
 
     #[test]
+    /**
+     * Checks that a packet matching no allow rule is reported as blocked.
+     *
+     * # Arguments
+     *
+     * This function takes no arguments.
+     *
+     * # Returns
+     *
+     * This function returns no value; it fails the test when the verdict is
+     * missing.
+     */
     fn the_simulator_explains_a_blocked_packet() {
         let mut app = demo_app();
         app.tab = Tab::Test;
@@ -235,6 +363,18 @@ mod tests {
     }
 
     #[test]
+    /**
+     * Checks that an unparseable source address produces an error instead of a
+     * panic.
+     *
+     * # Arguments
+     *
+     * This function takes no arguments.
+     *
+     * # Returns
+     *
+     * This function returns no value; it fails the test when parsing succeeds.
+     */
     fn an_invalid_address_is_reported_rather_than_panicking() {
         let mut app = demo_app();
         app.tab = Tab::Test;
