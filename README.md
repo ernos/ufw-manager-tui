@@ -8,7 +8,33 @@ lock themselves out of their own machine.
 It never invents its own firewall: `ufw` stays the single source of truth. ufw-manager-tui reads it, explains
 it, and only ever writes through it.
 
-## Why this exists
+## Appendix
+
+- [1. Why this exists](#1-why-this-exists)
+- [2. Installation](#2-installation)
+  - [2.1 Installation from crates.io](#21-installation-from-cratesio)
+  - [2.2 Installation from downloaded github repository](#22-installation-from-downloaded-github-repository)
+- [3. Try it without touching anything](#3-try-it-without-touching-anything)
+- [4. Real world use](#4-real-world-use)
+- [5. Key bindings](#5-key-bindings)
+- [6. The tabs](#6-the-tabs)
+  - [6.1 Home Tab](#61-home-tab)
+  - [6.2 Rules Tab](#62-rules-tab)
+  - [6.3 Add Tab](#63-add-tab)
+  - [6.4 Test Tab](#64-test-tab)
+  - [6.5 Activity Tab](#65-activity-tab)
+  - [6.6 Presets Tab](#66-presets-tab)
+  - [6.7 Help Tab](#67-help-tab)
+- [7. Safety model](#7-safety-model)
+- [8. Privileges](#8-privileges)
+- [9. Options](#9-options)
+- [10. Configuration](#10-configuration)
+- [11. What it deliberately does not do](#11-what-it-deliberately-does-not-do)
+- [12. Honest limitations](#12-honest-limitations)
+- [13. Development](#13-development)
+- [14. Licence](#14-licence)
+
+## 1. Why this exists
 
 `ufw` is the right tool, but its interface is a syntax. A newcomer is told "enable your firewall", reads
 the docs, and is one wrong command away from losing remote access, with no way to check what a rule
@@ -24,26 +50,48 @@ ufw-manager-tui adds the four things `ufw` cannot give you:
 4. **A way back.** Every change goes on an undo stack, and a change that could cut your SSH session
    spawns a detached watchdog that reverts it if you do not confirm you are still connected.
 
-## Install
+## 2. Installation
 
 Needs Rust 1.85+ and an installed `ufw` (Ubuntu, Debian and derivatives).
 
+### 2.1 Installation from crates.io
+
+```bash
+cargo install ufw-manager-tui
+```
+
+### 2.2 Installation from downloaded github repository
+
 ```sh
+git clone https://github.com/ernos/ufw-manager-tui.git
+cd ufw-manager-tui
 cargo install --path .
 ```
 
 `sudo ufw-manager-tui` for full control, or `ufw-manager-tui` to browse in read-only mode.
 
-## Try it without touching anything
+## 3. Try it without touching anything
 
 ```sh
 ufw-manager-tui --demo
 ```
 
+## 4. Real world use
+
+There is currently a bug (rendering error) when using the build in key binding `X` to escalate privileges to see and edit firewall rules. Instead use:
+```bash
+sudo -- ufw-manager-tui
+```
+or create a link for sudo user
+```bash
+cd /bin
+ln -s /usr/bin/ufw-manager-tui . # Creates a link so that root/sudo can run it
+```
+
 Runs against a fake firewall with a realistic rule set. Nothing on the system is read or changed, and it
 needs no root — this is also how the UI is screenshot-tested.
 
-## Keys
+## 5. Key bindings
 
 You can do everything with the arrow keys, `Enter` and `Esc`. Letter keys are shortcuts, and the footer
 always shows the ones that apply right now.
@@ -63,7 +111,7 @@ always shows the ones that apply right now.
 
 On the Rules tab: `a` add, `e` edit, `d` delete, `y` duplicate, `x` move, `t` test, `/` filter, `n` note.
 
-## The tabs
+## 6. The tabs
 
 | Tab | What it is for |
 |---|---|
@@ -75,35 +123,35 @@ On the Rules tab: `a` add, `e` edit, `d` delete, `y` duplicate, `x` move, `t` te
 | **Presets** | One-key recipes: lock down SSH, run a web server, minimal laptop, … |
 | **Help** | Keys and jargon |
 
-### Home Tab
+### 6.1 Home Tab
 
 ![Home Tab](screenshots/home.png)
 
-### Rules Tab
+### 6.2 Rules Tab
 
 ![Rules Tab](screenshots/rules.png)
 
-### Add Tab
+### 6.3 Add Tab
 
 ![Add Tab](screenshots/add.png)
 
-### Test Tab
+### 6.4 Test Tab
 
 ![Test Tab](screenshots/test.png)
 
-### Activity Tab
+### 6.5 Activity Tab
 
 ![Activity Tab](screenshots/activity.png)
 
-### Presets Tab
+### 6.6 Presets Tab
 
 ![Presets Tab](screenshots/presets.png)
 
-### Help Tab
+### 6.7 Help Tab
 
 ![Help Tab](screenshots/help.png)
 
-## Safety model
+## 7. Safety model
 
 - **`ufw` is the only writer.** The app shells out to it with an argument vector (never a shell string) and
   validates every change with `ufw --dry-run` first. It never edits `/etc/ufw/*` itself.
@@ -117,7 +165,7 @@ On the Rules tab: `a` add, `e` edit, `d` delete, `y` duplicate, `x` move, `t` te
 - **Notes are real ufw comments** (`ufw allow 22/tcp comment '…'`), not a sidecar file, so they survive
   edits made outside the app and never drift out of sync.
 
-## Privileges
+## 8. Privileges
 
 `ufw` only shows and changes rules when it runs as root.
 
@@ -128,7 +176,7 @@ On the Rules tab: `a` add, `e` edit, `d` delete, `y` duplicate, `x` move, `t` te
 | First write while unprivileged | Leaves raw mode, runs `sudo -v`, and retries — disable with `--no-escalate` |
 | `--readonly` | Never writes, even as root |
 
-## Options
+## 9. Options
 
 ```
 ufw-manager-tui [OPTIONS]
@@ -144,7 +192,7 @@ ufw-manager-tui [OPTIONS]
       --dump-state        Print the parsed firewall state and exit
 ```
 
-## Configuration
+## 10. Configuration
 
 `~/.config/ufw-manager-tui/config.toml`, all optional:
 
@@ -160,7 +208,7 @@ readonly = false
 
 The undo journal lives in `~/.local/state/ufw-manager-tui/journal.json`.
 
-## What it deliberately does not do
+## 11. What it deliberately does not do
 
 - Raw `iptables` / `nftables` editing — the wrong abstraction for the audience.
 - NAT, port forwarding, VPN or route configuration. Forward (`FWD`) rules are shown, and read-only.
@@ -168,7 +216,7 @@ The undo journal lives in `~/.local/state/ufw-manager-tui/journal.json`.
   here, as they are to `ufw` itself.
 - A daemon, a web UI, or multi-host management.
 
-## Honest limitations
+## 12. Honest limitations
 
 - **Hit counters** are read from `nft` and mapped to rule numbers by position inside `ufw-user-input`. A
   `limit` rule expands into several kernel rules, so when the counts do not line up exactly the column shows
@@ -181,7 +229,7 @@ The undo journal lives in `~/.local/state/ufw-manager-tui/journal.json`.
   rule numbering stays consistent.
 - If the process is killed with `SIGKILL`, the terminal may be left in raw mode. `reset` fixes it.
 
-## Development
+## 13. Development
 
 ```sh
 cargo test                                    # unit + integration, no root needed
@@ -200,6 +248,6 @@ Layers:
 See [docs/SPEC.md](docs/SPEC.md) for the full product specification, [docs/TESTING.md](docs/TESTING.md) for
 the manual verification checklist, and [docs/GLOSSARY.md](docs/GLOSSARY.md) for the plain-English terms.
 
-## Licence
+## 14. Licence
 
 MIT.
