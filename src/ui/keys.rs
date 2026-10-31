@@ -199,6 +199,10 @@ pub const ADD: HelpSection = HelpSection {
         ("a / A", "Jump straight to the advanced step"),
         ("ENTER", "Confirm the current step"),
         ("ESC", "Go back one step"),
+        (
+            "Direction",
+            "The advanced step cycles in → out → forward; a forwarding rule then names both interfaces",
+        ),
     ],
 };
 

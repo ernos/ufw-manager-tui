@@ -13,12 +13,12 @@ What the suite covers:
 | Area | Where | What is checked |
 |---|---|---|
 | `ufw status` parsing | `src/core/parse.rs` | inactive, empty, comments, `(log)`, application profiles, IPv6, interfaces, `FWD`, and a 26+ character `To` column that removes the padding gap that breaks byte-offset parsers |
-| Command building | `src/core/command.rs` | exact argument vectors, the short `allow 22/tcp` form, `from` before `to`, deleting without the comment, inverse of every change |
+| Command building | `src/core/command.rs` | exact argument vectors, the short `allow 22/tcp` form, `from` before `to`, deleting without the comment, inverse of every change, and the `ufw route …` / `ufw route insert NUM …` / `ufw route delete …` forms used for forwarding rules |
 | Plain English | `src/core/explain.rs` | sentence shape for allow / deny / limit / outbound / apps / ranges / notes |
 | Risk | `src/core/risk.rs` | boundaries between critical, high, medium, low, info; profile resolution; shadow detection |
-| Simulation | `src/core/simulate.rs` | built-in rules first, first match wins, default policy, interfaces, protocols, ranges, apps, pending drafts, shadowing |
+| Simulation | `src/core/simulate.rs` | built-in rules first, first match wins, default policy, interfaces, protocols, ranges, apps, pending drafts, shadowing, forwarded packets and the routed default policy |
 | Lockout guard | `src/core/lockout.rs` | one case per row of the safety table, plus "not over SSH" |
-| Presets | `src/core/presets.rs` | each recipe's commands, preconditions, and blocked reasons |
+| Presets | `src/core/presets.rs` | each recipe's commands, preconditions, and blocked reasons, including the tunnel-forwarding recipe |
 | Undo | `src/core/undo.rs` | ordering, JSON round trip, corrupt file handling, ids after reload |
 | Watchdog | `src/watchdog.rs` | cancel marker wins, inverse runs after the delay, missing state file |
 | Widgets | `src/ui/*` | every tab renders at 40×12, 120×40 and larger without panicking; key flows via `tests/app_flow.rs` |

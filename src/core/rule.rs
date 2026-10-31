@@ -187,7 +187,7 @@ impl FromStr for Action {
  *
  * * `In` - Traffic arriving at this machine.
  * * `Out` - Traffic leaving this machine.
- * * `Forward` - Traffic routed through this machine; shown read-only.
+ * * `Forward` - Traffic routed through this machine; written as `ufw route …`.
  */
 pub enum Direction {
     In,
@@ -209,7 +209,9 @@ impl Direction {
      * # Returns
      *
      * An `Option<&'static str>` containing `in` or `out`, or `None` for
-     * forwarding, which has no simple command-line word.
+     * forwarding. Forwarding is not a direction token `ufw` accepts in that
+     * position: the whole rule is prefixed with `route` instead, which the
+     * command builder adds.
      */
     pub fn ufw(self) -> Option<&'static str> {
         match self {
@@ -242,7 +244,8 @@ impl Direction {
     /**
      * Parses a direction from its short label.
      *
-     * Matching is case-insensitive.
+     * Matching is case-insensitive, and the full word `forward` is accepted as
+     * an alias for `FWD` so hand-edited configuration files stay readable.
      *
      * # Arguments
      *
@@ -257,7 +260,7 @@ impl Direction {
         match label.to_ascii_uppercase().as_str() {
             "IN" => Some(Direction::In),
             "OUT" => Some(Direction::Out),
-            "FWD" => Some(Direction::Forward),
+            "FWD" | "FORWARD" => Some(Direction::Forward),
             _ => None,
         }
     }
@@ -1031,7 +1034,7 @@ impl LogMode {
  * * `log` (`LogMode`) - How much of the rule's traffic is logged.
  * * `comment` (`Option<String>`) - The user's note for the rule.
  * * `v6` (`bool`) - Whether this is the IPv6 variant of the rule.
- * * `route` (`bool`) - Whether this is a forwarding rule; shown but not editable in v1.
+ * * `route` (`bool`) - Whether this is a forwarding rule, i.e. an `ufw route` rule.
  */
 pub struct Rule {
     /// `ufw`'s own rule number, i.e. the `N` in `ufw delete N`. `0` marks a rule that does not
@@ -1047,7 +1050,7 @@ pub struct Rule {
     pub log: LogMode,
     pub comment: Option<String>,
     pub v6: bool,
-    /// Forward rules are shown but not editable in v1.
+    /// True for a forwarding rule, i.e. one written with `ufw route`.
     pub route: bool,
 }
 
@@ -1152,8 +1155,10 @@ impl Rule {
     /**
      * Converts the rule back into an editable draft.
      *
-     * The conversion is lossy only for route rules, which are read-only and
-     * therefore never round-trip through the wizard.
+     * Every field the command builder needs is carried over, including both
+     * interfaces, so an edited rule says exactly what the original said:
+     * dropping the outgoing interface would silently widen an outgoing or
+     * forwarding rule.
      *
      * # Arguments
      *
@@ -1168,6 +1173,7 @@ impl Rule {
             action: self.action,
             direction: self.direction,
             interface_in: self.interface_in.clone(),
+            interface_out: self.interface_out.clone(),
             protocol: self.protocol,
             from_addr: self.from.addr.clone(),
             from_port: self.from.port.clone(),
@@ -1191,6 +1197,7 @@ impl Rule {
  * * `action` (`Action`) - What happens to matching traffic.
  * * `direction` (`Direction`) - Which way the traffic flows.
  * * `interface_in` (`Option<String>`) - The incoming interface, when limited.
+ * * `interface_out` (`Option<String>`) - The outgoing interface, when limited. Only a forwarding rule can name both interfaces; `ufw` accepts a single interface clause on other rules.
  * * `protocol` (`Protocol`) - The protocol the rule applies to.
  * * `from_addr` (`Option<String>`) - The source address or network.
  * * `from_port` (`PortSpec`) - The source port selection.
@@ -1203,6 +1210,7 @@ pub struct RuleDraft {
     pub action: Action,
     pub direction: Direction,
     pub interface_in: Option<String>,
+    pub interface_out: Option<String>,
     pub protocol: Protocol,
     pub from_addr: Option<String>,
     pub from_port: PortSpec,
@@ -1232,6 +1240,7 @@ impl Default for RuleDraft {
             action: Action::Allow,
             direction: Direction::In,
             interface_in: None,
+            interface_out: None,
             protocol: Protocol::Any,
             from_addr: None,
             from_port: PortSpec::Any,
@@ -1324,9 +1333,15 @@ impl RuleDraft {
      * Checks the draft for mistakes before `ufw` ever sees it.
      *
      * This catches the errors a newcomer is most likely to make so they can be
-     * phrased in plain English: forwarding rules, unparsable addresses, an
-     * application profile combined with an explicit protocol, a port range or
-     * list without a protocol, and a rule that would match all traffic.
+     * phrased in plain English: unparsable addresses, an application profile
+     * combined with an explicit protocol, a port range or list without a
+     * protocol, two interface clauses on a rule that is not forwarding, and a
+     * rule that would match all traffic.
+     *
+     * Forwarding rules are validated by the same rules, with one difference:
+     * `ufw` accepts both `in on` and `out on` on a route rule and rejects a
+     * route rule that constrains nothing at all (`ufw route allow` alone is a
+     * syntax error), so at least one interface, address or port must be set.
      *
      * # Arguments
      *
@@ -1338,9 +1353,6 @@ impl RuleDraft {
      * error message describing the first problem found.
      */
     pub fn validate(&self) -> Result<(), String> {
-        if self.direction == Direction::Forward {
-            return Err("forward rules are not supported yet — they are shown read-only".into());
-        }
         if let Some(addr) = &self.from_addr {
             if parse_net(addr).is_none() {
                 return Err(format!(
@@ -1365,11 +1377,22 @@ impl RuleDraft {
         if needs_proto && self.protocol == Protocol::Any {
             return Err("a port range or list needs a protocol (TCP or UDP). Pick one.".into());
         }
+        // `ufw` accepts a single `in on`/`out on` clause on a filter rule and only the `route`
+        // form takes both, so refuse the combination the command builder cannot express.
+        if self.direction != Direction::Forward
+            && self.interface_in.is_some()
+            && self.interface_out.is_some()
+        {
+            return Err(
+                "only a forwarding rule can name both an incoming and an outgoing interface".into(),
+            );
+        }
         if self.to_port.is_any()
             && self.from_port.is_any()
             && self.to_addr.is_none()
             && self.from_addr.is_none()
             && self.interface_in.is_none()
+            && self.interface_out.is_none()
         {
             return Err(
                 "this rule would match all traffic; choose a port, address or interface".into(),
@@ -1381,8 +1404,8 @@ impl RuleDraft {
     /**
      * Converts the draft into a concrete rule with the given number.
      *
-     * The resulting rule is never marked as IPv6 or as a route, and has no
-     * outgoing interface.
+     * The resulting rule is never marked as IPv6; the route flag is derived
+     * from the direction so a forwarding draft becomes a route rule.
      *
      * # Arguments
      *
@@ -1399,7 +1422,7 @@ impl RuleDraft {
             action: self.action,
             direction: self.direction,
             interface_in: self.interface_in.clone(),
-            interface_out: None,
+            interface_out: self.interface_out.clone(),
             protocol: self.protocol,
             from: Endpoint {
                 addr: self.from_addr.clone(),
@@ -1412,7 +1435,7 @@ impl RuleDraft {
             log: self.log,
             comment: self.comment.clone(),
             v6: false,
-            route: false,
+            route: self.direction == Direction::Forward,
         }
     }
 }
@@ -1562,6 +1585,147 @@ mod tests {
             .on_interface("eno1")
             .with_comment("SSH from LAN");
         assert!(draft.validate().is_ok(), "{:?}", draft.validate());
+    }
+
+    #[test]
+    /**
+     * Verifies that a forwarding draft naming both interfaces validates.
+     *
+     * # Arguments
+     *
+     * This function takes no arguments.
+     *
+     * # Returns
+     *
+     * This function returns no value; it asserts the expected behavior.
+     */
+    fn validate_accepts_a_forwarding_rule() {
+        let draft = RuleDraft {
+            direction: Direction::Forward,
+            interface_in: Some("eth0".into()),
+            interface_out: Some("eth1".into()),
+            ..Default::default()
+        };
+        assert!(draft.validate().is_ok(), "{:?}", draft.validate());
+    }
+
+    #[test]
+    /**
+     * Verifies that a forwarding rule still has to constrain something.
+     *
+     * `ufw route allow` on its own is a syntax error, so a draft with no
+     * interface, address or port must be rejected.
+     *
+     * # Arguments
+     *
+     * This function takes no arguments.
+     *
+     * # Returns
+     *
+     * This function returns no value; it asserts the expected behavior.
+     */
+    fn validate_rejects_a_forwarding_rule_that_matches_everything() {
+        let draft = RuleDraft {
+            direction: Direction::Forward,
+            ..Default::default()
+        };
+        assert!(draft.validate().unwrap_err().contains("all traffic"));
+    }
+
+    #[test]
+    /**
+     * Verifies that only forwarding rules may name two interfaces.
+     *
+     * `ufw` accepts a single `in on`/`out on` clause on a filter rule and answers
+     * `Wrong number of arguments` to anything else.
+     *
+     * # Arguments
+     *
+     * This function takes no arguments.
+     *
+     * # Returns
+     *
+     * This function returns no value; it asserts the expected behavior.
+     */
+    fn validate_rejects_two_interfaces_on_a_filter_rule() {
+        let draft = RuleDraft {
+            interface_in: Some("eth0".into()),
+            interface_out: Some("eth1".into()),
+            ..Default::default()
+        };
+        assert!(draft
+            .validate()
+            .unwrap_err()
+            .contains("only a forwarding rule"));
+    }
+
+    #[test]
+    /**
+     * Verifies that a forwarding draft survives a trip through [`Rule`].
+     *
+     * Both interfaces have to come back, otherwise editing a route rule would
+     * quietly turn it into one that forwards on any interface.
+     *
+     * # Arguments
+     *
+     * This function takes no arguments.
+     *
+     * # Returns
+     *
+     * This function returns no value; it asserts the expected behavior.
+     */
+    fn a_forwarding_draft_round_trips_through_a_rule() {
+        let draft = RuleDraft {
+            action: Action::Deny,
+            direction: Direction::Forward,
+            interface_in: Some("eth0".into()),
+            interface_out: Some("eth1".into()),
+            protocol: Protocol::Tcp,
+            to_addr: Some("10.0.0.0/8".into()),
+            to_port: PortSpec::single(443),
+            log: LogMode::Log,
+            comment: Some("VPN to LAN".into()),
+            ..Default::default()
+        };
+        let rule = draft.to_rule(4);
+        assert!(rule.is_route());
+        assert_eq!(rule.direction, Direction::Forward);
+        assert_eq!(rule.to_draft(), draft);
+    }
+
+    #[test]
+    /**
+     * Verifies that an outgoing rule keeps its interface when converted.
+     *
+     * `ufw status` prints `ALLOW OUT` rules as `… Anywhere on eth1`, and losing
+     * that interface on the way to a draft would widen the rule.
+     *
+     * # Arguments
+     *
+     * This function takes no arguments.
+     *
+     * # Returns
+     *
+     * This function returns no value; it asserts the expected behavior.
+     */
+    fn an_outgoing_rule_keeps_its_interface_as_a_draft() {
+        let rule = Rule {
+            number: 2,
+            action: Action::Allow,
+            direction: Direction::Out,
+            interface_in: None,
+            interface_out: Some("eth1".into()),
+            protocol: Protocol::Any,
+            from: Endpoint::any(),
+            to: Endpoint::from_addr("10.0.0.0/8"),
+            log: LogMode::None,
+            comment: None,
+            v6: false,
+            route: false,
+        };
+        let draft = rule.to_draft();
+        assert_eq!(draft.interface_out.as_deref(), Some("eth1"));
+        assert_eq!(draft.to_rule(2), rule);
     }
 
     #[test]

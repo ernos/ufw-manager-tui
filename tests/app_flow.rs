@@ -500,6 +500,205 @@ fn editing_an_existing_rule_opens_the_wizard_prefilled() {
 
 #[test]
 /**
+ * Verifies that the forwarding rule in the demo set can be edited.
+ *
+ * Forwarding rules used to be refused outright; the draft has to keep both
+ * interfaces so the rebuilt command is still a `ufw route` rule.
+ *
+ * # Arguments
+ *
+ * This function takes no arguments.
+ *
+ * # Returns
+ *
+ * `()` - This function returns no value.
+ *
+ * # Panics
+ *
+ * Panics if the wizard does not open on the forwarding rule or the draft lost
+ * its direction or interfaces.
+ */
+fn editing_a_forward_rule_opens_the_wizard_prefilled() {
+    let mut app = app();
+    app.tab = Tab::Rules;
+    // The demo's rule 6 is `Anywhere on wg0  ALLOW FWD  Anywhere`.
+    app.rules_cursor = 5;
+    press(&mut app, KeyCode::Char('e'));
+
+    assert_eq!(app.tab, Tab::Add);
+    assert_eq!(app.wizard.step, WizardStep::Review);
+    assert_eq!(app.wizard.editing, Some(6));
+    assert_eq!(
+        app.wizard.draft.direction,
+        ufw_manager::core::rule::Direction::Forward
+    );
+    assert_eq!(app.wizard.draft.interface_out.as_deref(), Some("wg0"));
+}
+
+#[test]
+/**
+ * Verifies that applying an edited forwarding rule sends `route insert`.
+ *
+ * The edit is a delete by number followed by a `ufw route insert NUM …`, so the
+ * rule keeps its position and stays a route rule.
+ *
+ * # Arguments
+ *
+ * This function takes no arguments.
+ *
+ * # Returns
+ *
+ * `()` - This function returns no value.
+ *
+ * # Panics
+ *
+ * Panics if the update was not queued as expected.
+ */
+fn applying_an_edited_forward_rule_sends_a_route_insert() {
+    let mut app = app();
+    app.tab = Tab::Rules;
+    app.rules_cursor = 5;
+    press(&mut app, KeyCode::Char('e'));
+
+    // Apply is the second option on the review step.
+    press(&mut app, KeyCode::Down);
+    press(&mut app, KeyCode::Enter);
+
+    assert_eq!(app.journal.len(), 1);
+    let entry = &app.journal.entries()[0];
+    let steps: Vec<String> = entry.forward.iter().map(|step| step.join(" ")).collect();
+    assert!(steps[0].contains("delete 6"), "{steps:?}");
+    // Rule 6 is the last rule, so `ufw` re-appends it instead of inserting at position 6.
+    assert!(steps[1].starts_with("route allow out on wg0"), "{steps:?}");
+
+    let kept = app.state.rules.iter().filter(|r| r.is_route()).count();
+    assert_eq!(kept, 1, "the forwarding rule should still be there");
+}
+
+#[test]
+/**
+ * Verifies that a forwarding rule can be deleted like any other rule.
+ *
+ * # Arguments
+ *
+ * This function takes no arguments.
+ *
+ * # Returns
+ *
+ * `()` - This function returns no value.
+ *
+ * # Panics
+ *
+ * Panics if the rule set still contains a forwarding rule afterwards.
+ */
+fn deleting_a_forward_rule_removes_it() {
+    let mut app = app();
+    app.tab = Tab::Rules;
+    let before = app.state.rules.len();
+    app.rules_cursor = 5;
+    press(&mut app, KeyCode::Char('d'));
+
+    assert_eq!(app.state.rules.len(), before - 1);
+    assert!(app.state.rules.iter().all(|rule| !rule.is_route()));
+}
+
+#[test]
+/**
+ * Verifies that the forwarding goal jumps straight to the advanced step with
+ * the incoming-interface row selected.
+ *
+ * # Arguments
+ *
+ * This function takes no arguments.
+ *
+ * # Returns
+ *
+ * `()` - This function returns no value.
+ *
+ * # Panics
+ *
+ * Panics if the wizard lands somewhere else or the direction is not forwarding.
+ */
+fn the_forwarding_goal_opens_the_advanced_step() {
+    let mut app = app();
+    app.start_add();
+    app.wizard.cursor = 3;
+    press(&mut app, KeyCode::Enter);
+
+    assert_eq!(app.wizard.step, WizardStep::Advanced);
+    assert_eq!(app.wizard.cursor, 2);
+    assert_eq!(
+        app.wizard.draft.direction,
+        ufw_manager::core::rule::Direction::Forward
+    );
+}
+
+#[test]
+/**
+ * Verifies that a forwarding rule can be built end to end from the wizard.
+ *
+ * The test picks the forwarding goal, types both interfaces, walks to the end
+ * of the advanced step and applies, then checks that the firewall gained a
+ * `route` rule with both interfaces.
+ *
+ * # Arguments
+ *
+ * This function takes no arguments.
+ *
+ * # Returns
+ *
+ * `()` - This function returns no value.
+ *
+ * # Panics
+ *
+ * Panics if the wizard does not follow the expected path or the rule set does
+ * not gain the forwarding rule.
+ */
+fn creating_a_forward_rule_through_the_wizard_adds_a_route_rule() {
+    let mut app = app();
+    app.start_add();
+    app.wizard.cursor = 3;
+    press(&mut app, KeyCode::Enter);
+    assert_eq!(app.wizard.step, WizardStep::Advanced);
+
+    // Row 2 is "In interface"; clear whatever the defaults prefilled.
+    press(&mut app, KeyCode::Enter);
+    for _ in 0..16 {
+        press(&mut app, KeyCode::Backspace);
+    }
+    for c in "wg0".chars() {
+        press(&mut app, KeyCode::Char(c));
+    }
+    press(&mut app, KeyCode::Enter);
+    assert_eq!(app.wizard.draft.interface_in.as_deref(), Some("wg0"));
+
+    // Row 3 is "Out interface".
+    press(&mut app, KeyCode::Down);
+    press(&mut app, KeyCode::Enter);
+    for _ in 0..16 {
+        press(&mut app, KeyCode::Backspace);
+    }
+    for c in "eno1".chars() {
+        press(&mut app, KeyCode::Char(c));
+    }
+    press(&mut app, KeyCode::Enter);
+    assert_eq!(app.wizard.draft.interface_out.as_deref(), Some("eno1"));
+
+    // Walk to the last row, "Done — go to review", and apply.
+    press(&mut app, KeyCode::End);
+    press(&mut app, KeyCode::Enter);
+    assert_eq!(app.wizard.step, WizardStep::Review);
+    press(&mut app, KeyCode::Down);
+    press(&mut app, KeyCode::Enter);
+
+    let added = app.state.rules.last().expect("the new rule");
+    assert!(added.is_route(), "{added:?}");
+    assert_eq!(added.interface_in.as_deref(), Some("wg0"));
+    assert_eq!(added.interface_out.as_deref(), Some("eno1"));
+}
+
+#[test]
+/**
  * Verifies that with skip-wizard enabled, editing a rule opens the wizard on
  * the advanced step instead of the review step.
  *

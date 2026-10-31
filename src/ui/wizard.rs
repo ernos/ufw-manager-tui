@@ -227,6 +227,15 @@ fn draw_preview(frame: &mut Frame, area: Rect, app: &App) {
         ),
     ]));
 
+    if draft.direction == crate::core::rule::Direction::Forward
+        && app.state.default_routed == crate::core::firewall::RoutedPolicy::Disabled
+    {
+        lines.push(Line::from(Span::styled(
+            "  forwarding is off in the kernel (net/ipv4/ip_forward=0), so this rule has no effect",
+            app.theme.risk_style(RiskLevel::Medium),
+        )));
+    }
+
     if let Some(trace) = &app.wizard.trace {
         lines.push(Line::from(Span::styled(
             format!("  simulation: {}", trace.explanation),
@@ -264,10 +273,13 @@ fn field_label(field: InputField) -> &'static str {
     match field {
         InputField::Address => "address or network (e.g. 192.168.1.0/24, 203.0.113.7)",
         InputField::Port => "port (e.g. 22, 8000:8100, 80,443, or an app profile name)",
-        InputField::Interface => "interface (e.g. eno1, wlan0, wg0 — empty for any)",
+        InputField::Interface => "in interface (e.g. eno1, wlan0, wg0 — empty for any)",
+        InputField::InterfaceOut => "out interface (e.g. eth0, wg0 — empty for any)",
         InputField::Note => "note for this rule",
         InputField::FromAddress => "from address (empty for any)",
         InputField::FromPort => "from port (empty for any)",
+        InputField::ToAddress => "to address (empty for any)",
+        InputField::ToPort => "to port (e.g. 443, 8000:8100 — empty for any)",
         InputField::AdvancedComment => "note for this rule",
     }
 }
@@ -421,5 +433,32 @@ mod tests {
         ));
         let output = render(&app, 120, 40);
         assert!(output.contains("10.0.0.0/8"));
+    }
+
+    #[test]
+    /**
+     * Checks that a forwarding draft warns when the kernel is not forwarding.
+     *
+     * The demo firewall reports `disabled (routed)`, so a forwarding rule would
+     * silently do nothing; the preview has to say so.
+     *
+     * # Arguments
+     *
+     * This function takes no arguments.
+     *
+     * # Returns
+     *
+     * This function returns no value; it fails the test when the warning is
+     * missing.
+     */
+    fn a_forwarding_draft_warns_when_forwarding_is_off() {
+        let mut app = demo_app();
+        app.start_add();
+        app.wizard.step = WizardStep::Review;
+        app.wizard.draft.direction = crate::core::rule::Direction::Forward;
+        app.wizard.draft.interface_in = Some("wg0".into());
+        app.wizard.draft.interface_out = Some("eth0".into());
+        let output = render(&app, 140, 45);
+        assert!(output.contains("net/ipv4/ip_forward"), "{output}");
     }
 }

@@ -242,6 +242,9 @@ pub enum WizardStep {
  * * `Note` - The rule comment edited from the Rules tab.
  * * `FromAddress` - The source address on the advanced step.
  * * `FromPort` - The source port on the advanced step.
+ * * `ToAddress` - The destination address on the advanced step.
+ * * `ToPort` - The destination port on the advanced step.
+ * * `InterfaceOut` - The outgoing interface on the advanced step; only forwarding rules may set it.
  * * `AdvancedComment` - The comment edited on the advanced step.
  */
 pub enum InputField {
@@ -251,6 +254,9 @@ pub enum InputField {
     Note,
     FromAddress,
     FromPort,
+    ToAddress,
+    ToPort,
+    InterfaceOut,
     AdvancedComment,
 }
 
@@ -1391,10 +1397,10 @@ impl App {
                 self.save_settings("default action");
             }
             1 => {
-                self.config.defaults.direction = if self.config.defaults.direction == "out" {
-                    "in".into()
-                } else {
-                    "out".into()
+                self.config.defaults.direction = match self.config.defaults.direction.as_str() {
+                    "in" => "out".into(),
+                    "out" => "forward".into(),
+                    _ => "in".into(),
                 };
                 self.save_settings("default direction");
             }
@@ -1789,9 +1795,9 @@ impl App {
      *
      * The wizard starts on the review step with the rule converted to a draft and
      * the rule number remembered as the edit target; when the skip-wizard
-     * setting is enabled it starts on the advanced step instead. Forward (route)
-     * rules are refused with a warning because they are read-only in this
-     * version.
+     * setting is enabled it starts on the advanced step instead. Forwarding
+     * rules are edited the same way as any other rule: the draft keeps both
+     * interfaces, so the rebuilt command is a `ufw route` rule.
      *
      * # Arguments
      *
@@ -1805,13 +1811,6 @@ impl App {
         let Some(rule) = self.selected_rule() else {
             return;
         };
-        if rule.is_route() {
-            self.set_status(
-                StatusLevel::Warn,
-                "forward rules are read-only in this version",
-            );
-            return;
-        }
         self.wizard = Wizard {
             step: if self.skip_wizard {
                 WizardStep::Advanced
@@ -2076,6 +2075,10 @@ impl App {
                     "Limit connections".into(),
                     "Allow it, but slow down repeat attempts".into(),
                 ),
+                (
+                    "Forward traffic through this machine".into(),
+                    "route traffic between two interfaces".into(),
+                ),
             ],
             WizardStep::Who => {
                 let lan_label = match &self.lan {
@@ -2123,8 +2126,12 @@ impl App {
                     ("Action", draft.action.ufw().to_string()),
                     ("Direction", draft.direction.label().to_string()),
                     (
-                        "Interface",
+                        "In interface",
                         draft.interface_in.clone().unwrap_or_else(|| "any".into()),
+                    ),
+                    (
+                        "Out interface",
+                        draft.interface_out.clone().unwrap_or_else(|| "any".into()),
                     ),
                     ("Protocol", draft.protocol.label().to_string()),
                     (
@@ -2308,6 +2315,18 @@ impl App {
         self.wizard.error = None;
         match self.wizard.step {
             WizardStep::Goal => {
+                if self.wizard.cursor == 3 {
+                    // Forwarding has no yes/no question to ask next: the two interfaces are the
+                    // whole rule, so go straight to the advanced step with the interface row
+                    // selected.
+                    self.wizard.draft.action = Action::Allow;
+                    self.wizard.draft.direction = Direction::Forward;
+                    self.wizard.draft.interface_in = None;
+                    self.wizard.draft.interface_out = None;
+                    self.wizard.step = WizardStep::Advanced;
+                    self.wizard.cursor = 2;
+                    return;
+                }
                 self.wizard.draft.action = match self.wizard.cursor {
                     1 => Action::Deny,
                     2 => Action::Limit,
@@ -2461,7 +2480,20 @@ impl App {
                     Some(value)
                 };
             }
-            
+            InputField::ToAddress => {
+                self.wizard.draft.to_addr = if value.is_empty() || value == "any" {
+                    None
+                } else {
+                    Some(value)
+                };
+            }
+            InputField::InterfaceOut => {
+                self.wizard.draft.interface_out = if value.is_empty() || value == "any" {
+                    None
+                } else {
+                    Some(value)
+                };
+            }
             InputField::Port => match value.parse::<PortSpec>() {
                 Ok(spec) => {
                     self.wizard.draft.to_port = spec;
@@ -2472,6 +2504,17 @@ impl App {
                     }
                     self.wizard.step = WizardStep::Review;
                     self.wizard.cursor = 0;
+                }
+                Err(error) => self.wizard.error = Some(error),
+            },
+            InputField::ToPort => match value.parse::<PortSpec>() {
+                Ok(spec) => {
+                    self.wizard.draft.to_port = spec;
+                    if self.wizard.draft.protocol == Protocol::Any
+                        && self.wizard.draft.to_port.is_range_or_list()
+                    {
+                        self.wizard.draft.protocol = Protocol::Tcp;
+                    }
                 }
                 Err(error) => self.wizard.error = Some(error),
             },
@@ -2495,9 +2538,9 @@ impl App {
     /**
      * Handles the advanced step by editing the field under the cursor.
      *
-     * Toggles cycle the action, direction, protocol, and logging values; the other
-     * rows open a text input pre-filled with the current value. The final row
-     * returns to the review step.
+     * Toggles cycle the action, direction (in → out → forward), protocol and
+     * logging values; the other rows open a text input pre-filled with the
+     * current value. The final row returns to the review step.
      *
      * # Arguments
      *
@@ -2522,10 +2565,10 @@ impl App {
                     draft.action = Action::ALL[(index + 1) % Action::ALL.len()];
                 }
                 1 => {
-                    draft.direction = if draft.direction == Direction::In {
-                        Direction::Out
-                    } else {
-                        Direction::In
+                    draft.direction = match draft.direction {
+                        Direction::In => Direction::Out,
+                        Direction::Out => Direction::Forward,
+                        Direction::Forward => Direction::In,
                     };
                 }
                 2 => {
@@ -2535,19 +2578,25 @@ impl App {
                     ));
                 }
                 3 => {
+                    open = Some((
+                        InputField::InterfaceOut,
+                        TextInput::new(draft.interface_out.clone().unwrap_or_default()),
+                    ));
+                }
+                4 => {
                     let index = Protocol::COMMON
                         .iter()
                         .position(|p| *p == draft.protocol)
                         .unwrap_or(0);
                     draft.protocol = Protocol::COMMON[(index + 1) % Protocol::COMMON.len()];
                 }
-                4 => {
+                5 => {
                     open = Some((
                         InputField::FromAddress,
                         TextInput::new(draft.from_addr.clone().unwrap_or_default()),
                     ));
                 }
-                5 => {
+                6 => {
                     let prefill = if draft.from_port.is_any() {
                         String::new()
                     } else {
@@ -2555,29 +2604,29 @@ impl App {
                     };
                     open = Some((InputField::FromPort, TextInput::new(prefill)));
                 }
-                6 => {
+                7 => {
                     open = Some((
-                        InputField::FromAddress,
+                        InputField::ToAddress,
                         TextInput::new(draft.to_addr.clone().unwrap_or_default()),
                     ));
                 }
-                7 => {
+                8 => {
                     let prefill = draft.to_port.to_string();
                     let prefill = if prefill == "any" {
                         String::new()
                     } else {
                         prefill
                     };
-                    open = Some((InputField::Port, TextInput::new(prefill)));
+                    open = Some((InputField::ToPort, TextInput::new(prefill)));
                 }
-                8 => {
+                9 => {
                     draft.log = match draft.log {
                         crate::core::rule::LogMode::None => crate::core::rule::LogMode::Log,
                         crate::core::rule::LogMode::Log => crate::core::rule::LogMode::LogAll,
                         crate::core::rule::LogMode::LogAll => crate::core::rule::LogMode::None,
                     };
                 }
-                9 => {
+                10 => {
                     open = Some((
                         InputField::AdvancedComment,
                         TextInput::new(draft.comment.clone().unwrap_or_default()),
@@ -2805,6 +2854,7 @@ impl App {
         Ok(Packet {
             direction,
             iface: self.lan.as_ref().map(|lan| lan.iface.clone()),
+            iface_out: None,
             protocol,
             src,
             src_port,
@@ -3674,6 +3724,7 @@ fn packet_for_draft(draft: &RuleDraft, ssh_port: u16) -> Packet {
     Packet {
         direction: draft.direction,
         iface: draft.interface_in.clone(),
+        iface_out: draft.interface_out.clone(),
         protocol: if draft.protocol == Protocol::Any {
             Protocol::Tcp
         } else {
@@ -3751,6 +3802,7 @@ fn packet_for_rule(rule: &Rule, ssh_port: u16) -> Packet {
     Packet {
         direction: rule.direction,
         iface: rule.interface_in.clone(),
+        iface_out: rule.interface_out.clone(),
         protocol: if rule.protocol == Protocol::Any {
             Protocol::Tcp
         } else {

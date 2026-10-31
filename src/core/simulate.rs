@@ -9,7 +9,7 @@
 
 use std::net::IpAddr;
 
-use crate::core::firewall::{FirewallState, Policy};
+use crate::core::firewall::{FirewallState, Policy, RoutedPolicy};
 use crate::core::parse::AppProfile;
 use crate::core::rule::{Action, Direction, PortSpec, Protocol, Rule, RuleDraft};
 
@@ -23,6 +23,7 @@ use crate::core::rule::{Action, Direction, PortSpec, Protocol, Rule, RuleDraft};
  *
  * * `direction` (`Direction`) - Which way the traffic flows.
  * * `iface` (`Option<String>`) - The interface the packet arrives on, if known.
+ * * `iface_out` (`Option<String>`) - The interface the packet leaves through, if known. Only forwarded traffic has both.
  * * `protocol` (`Protocol`) - The packet's protocol.
  * * `src` (`IpAddr`) - The source address.
  * * `src_port` (`u16`) - The source port.
@@ -34,6 +35,7 @@ use crate::core::rule::{Action, Direction, PortSpec, Protocol, Rule, RuleDraft};
 pub struct Packet {
     pub direction: Direction,
     pub iface: Option<String>,
+    pub iface_out: Option<String>,
     pub protocol: Protocol,
     pub src: IpAddr,
     pub src_port: u16,
@@ -63,6 +65,7 @@ impl Default for Packet {
         Self {
             direction: Direction::In,
             iface: None,
+            iface_out: None,
             protocol: Protocol::Tcp,
             src: "192.168.1.50".parse().expect("valid literal"),
             src_port: 51_000,
@@ -217,7 +220,7 @@ pub fn simulate_with_pending(
     let mut candidates: Vec<Rule> = state
         .rules
         .iter()
-        .filter(|r| r.direction == packet.direction && !r.is_route())
+        .filter(|r| r.direction == packet.direction)
         .cloned()
         .collect();
     for draft in pending {
@@ -269,9 +272,26 @@ pub fn simulate_with_pending(
         return trace;
     }
 
+    if packet.direction == Direction::Forward && state.default_routed == RoutedPolicy::Disabled {
+        steps.push(TraceStep {
+            owner: StepOwner::Default,
+            label: "kernel forwarding is switched off".into(),
+            action: Action::Deny,
+            matched: true,
+            shadowed: false,
+        });
+        let mut trace = finish(steps, Action::Deny, None, true, packet);
+        trace.notes.push(
+            "Nothing is forwarded while net/ipv4/ip_forward is off. Set net/ipv4/ip_forward=1 in /etc/ufw/sysctl.conf and reload the firewall, then check that `ufw status verbose` no longer reports `disabled (routed)`."
+                .into(),
+        );
+        return trace;
+    }
+
     let policy = match packet.direction {
+        Direction::Forward => state.default_routed.policy(),
         Direction::Out => state.default_outgoing,
-        _ => state.default_incoming,
+        Direction::In => state.default_incoming,
     };
     let action = match policy {
         Policy::Allow => Action::Allow,
@@ -366,7 +386,7 @@ fn direction_word(direction: Direction) -> &'static str {
  *
  * The wording depends on the direction: incoming traffic names the source
  * address and both ports, outgoing traffic names the destination, and
- * forwarded traffic is described generically.
+ * forwarded traffic names both endpoints and whichever interfaces it crosses.
  *
  * # Arguments
  *
@@ -392,7 +412,36 @@ fn describe_traffic(packet: &Packet) -> String {
             packet.dst_port,
             packet.protocol.label()
         ),
-        Direction::Forward => "Forwarded traffic".to_string(),
+        Direction::Forward => format!(
+            "Traffic from {} port {} to {} port {} ({}) forwarded through this machine{}",
+            packet.src,
+            packet.src_port,
+            packet.dst,
+            packet.dst_port,
+            packet.protocol.label(),
+            describe_interfaces(packet)
+        ),
+    }
+}
+
+/**
+ * Renders the interfaces a forwarded packet crosses, when they are known.
+ *
+ * # Arguments
+ *
+ * * `packet` (`&Packet`) - The packet whose interfaces are described.
+ *
+ * # Returns
+ *
+ * A `String` such as `" in on wg0 and out on eth0"`, or an empty string when
+ * neither interface is known.
+ */
+fn describe_interfaces(packet: &Packet) -> String {
+    match (&packet.iface, &packet.iface_out) {
+        (Some(incoming), Some(outgoing)) => format!(" in on {incoming} and out on {outgoing}"),
+        (Some(incoming), None) => format!(" in on {incoming}"),
+        (None, Some(outgoing)) => format!(" out on {outgoing}"),
+        (None, None) => String::new(),
     }
 }
 
@@ -422,7 +471,10 @@ fn rule_label(rule: &Rule) -> String {
         out.push_str(" from anywhere");
     }
     if let Some(iface) = &rule.interface_in {
-        out.push_str(&format!(" on {iface}"));
+        out.push_str(&format!(" in on {iface}"));
+    }
+    if let Some(iface) = &rule.interface_out {
+        out.push_str(&format!(" out on {iface}"));
     }
     out
 }
@@ -519,7 +571,7 @@ fn builtin_steps(packet: &Packet) -> Vec<Builtin> {
  * Returns whether a rule matches a packet.
  *
  * This is pure and is the single definition of matching used everywhere. A
- * rule matches when the direction agrees, the interface agrees (when both
+ * rule matches when the direction agrees, both interfaces agree (when both
  * sides specify one), both addresses fall inside the rule's networks, the
  * protocol agrees, and both ports match.
  *
@@ -538,6 +590,11 @@ pub fn matches_rule(rule: &Rule, profiles: &[AppProfile], packet: &Packet) -> bo
         return false;
     }
     if let (Some(rule_iface), Some(packet_iface)) = (&rule.interface_in, &packet.iface) {
+        if rule_iface != packet_iface {
+            return false;
+        }
+    }
+    if let (Some(rule_iface), Some(packet_iface)) = (&rule.interface_out, &packet.iface_out) {
         if rule_iface != packet_iface {
             return false;
         }
@@ -687,6 +744,7 @@ mod tests {
         Packet {
             direction: Direction::In,
             iface: None,
+            iface_out: None,
             protocol: Protocol::Tcp,
             src: ip.parse().unwrap(),
             src_port: 51_000,
@@ -695,6 +753,156 @@ mod tests {
             established: false,
             loopback: false,
         }
+    }
+
+    /**
+     * Builds a forwarded TCP packet crossing two named interfaces.
+     *
+     * # Arguments
+     *
+     * * `incoming` (`&str`) - The interface the packet arrives on.
+     * * `outgoing` (`&str`) - The interface it should leave through.
+     *
+     * # Returns
+     *
+     * A `Packet` with direction `Forward` from `10.8.0.2:51000` to
+     * `192.168.1.19:443`.
+     */
+    fn forwarded(incoming: &str, outgoing: &str) -> Packet {
+        Packet {
+            direction: Direction::Forward,
+            iface: Some(incoming.into()),
+            iface_out: Some(outgoing.into()),
+            protocol: Protocol::Tcp,
+            src: "10.8.0.2".parse().unwrap(),
+            src_port: 51_000,
+            dst: "192.168.1.19".parse().unwrap(),
+            dst_port: 443,
+            established: false,
+            loopback: false,
+        }
+    }
+
+    /**
+     * Builds a forwarding rule that lets `10.8.0.0/24` through `incoming` to
+     * `outgoing` on the given port.
+     *
+     * # Arguments
+     *
+     * * `action` (`Action`) - The action the rule applies.
+     * * `incoming` (`&str`) - The incoming interface the rule requires.
+     * * `outgoing` (`&str`) - The outgoing interface the rule requires.
+     * * `port` (`u16`) - The destination port the rule covers.
+     *
+     * # Returns
+     *
+     * A `Rule` marked as a route rule.
+     */
+    fn forward_rule(action: Action, incoming: &str, outgoing: &str, port: u16) -> Rule {
+        Rule {
+            direction: Direction::Forward,
+            route: true,
+            interface_in: Some(incoming.into()),
+            interface_out: Some(outgoing.into()),
+            from: Endpoint {
+                addr: Some("10.8.0.0/24".into()),
+                port: PortSpec::Any,
+            },
+            to: Endpoint {
+                addr: None,
+                port: PortSpec::single(port),
+            },
+            ..rule(1, action, Direction::Forward, PortSpec::single(port), None)
+        }
+    }
+
+    #[test]
+    /**
+     * Verifies that a forwarding rule decides forwarded traffic.
+     *
+     * # Arguments
+     *
+     * This function takes no arguments.
+     *
+     * # Returns
+     *
+     * This function returns no value; it asserts the expected behavior.
+     */
+    fn a_forwarding_rule_decides_forwarded_traffic() {
+        let st = state(vec![forward_rule(Action::Allow, "wg0", "eth0", 443)]);
+        let trace = simulate(&st, &[], &forwarded("wg0", "eth0"));
+        assert!(trace.allowed(), "{}", trace.explanation);
+        assert_eq!(trace.winning_rule, Some(1));
+        assert!(trace.explanation.contains("forwarded through this machine"));
+    }
+
+    #[test]
+    /**
+     * Verifies that a forwarding rule only matches the interfaces it names.
+     *
+     * # Arguments
+     *
+     * This function takes no arguments.
+     *
+     * # Returns
+     *
+     * This function returns no value; it asserts the expected behavior.
+     */
+    fn a_forwarding_rule_ignores_the_wrong_outgoing_interface() {
+        let st = state(vec![forward_rule(Action::Allow, "wg0", "eth0", 443)]);
+        let trace = simulate(&st, &[], &forwarded("wg0", "eth1"));
+        assert_eq!(trace.winning_rule, None);
+        assert!(trace.decided_by_default);
+    }
+
+    #[test]
+    /**
+     * Verifies that forwarded traffic falls back to the routed default policy.
+     *
+     * # Arguments
+     *
+     * This function takes no arguments.
+     *
+     * # Returns
+     *
+     * This function returns no value; it asserts the expected behavior.
+     */
+    fn forwarded_traffic_uses_the_routed_default_policy() {
+        let mut st = state(vec![]);
+        st.default_routed = RoutedPolicy::Deny;
+        let trace = simulate(&st, &[], &forwarded("wg0", "eth0"));
+        assert!(!trace.allowed());
+        assert!(
+            trace
+                .steps
+                .iter()
+                .any(|step| step.matched && step.label == "default forwarding policy"),
+            "{:?}",
+            trace.steps
+        );
+    }
+
+    #[test]
+    /**
+     * Verifies that switched-off kernel forwarding is reported, not guessed at.
+     *
+     * # Arguments
+     *
+     * This function takes no arguments.
+     *
+     * # Returns
+     *
+     * This function returns no value; it asserts the expected behavior.
+     */
+    fn disabled_forwarding_is_explained() {
+        let mut st = state(vec![forward_rule(Action::Allow, "wg0", "eth0", 443)]);
+        st.default_routed = RoutedPolicy::Disabled;
+        let trace = simulate(&st, &[], &forwarded("wg0", "void"));
+        assert!(!trace.allowed());
+        assert!(trace
+            .notes
+            .iter()
+            .any(|note| note.contains("net/ipv4/ip_forward")));
     }
 
     #[test]

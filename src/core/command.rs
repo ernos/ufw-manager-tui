@@ -150,6 +150,7 @@ pub fn render_command(args: &[String]) -> String {
  *
  * The short `allow 22/tcp` form is preferred whenever the rule is plain enough for it;
  * otherwise the full documented grammar is emitted, with `from` always before `to`.
+ * Forwarding rules are prefixed with `route` and carry up to two interface clauses.
  *
  * # Arguments
  *
@@ -163,17 +164,25 @@ pub fn render_command(args: &[String]) -> String {
  */
 pub fn rule_args(draft: &RuleDraft, include_comment: bool) -> Result<Vec<String>, String> {
     draft.validate()?;
-    let mut args = vec![draft.action.ufw().to_string()];
+    let mut args = Vec::new();
+    if draft.direction == Direction::Forward {
+        args.push("route".to_string());
+    }
+    args.push(draft.action.ufw().to_string());
 
     match simple_target(draft) {
         Some(target) => args.push(target),
         None => {
-            if let Some(direction) = draft.direction.ufw() {
-                args.push(direction.to_string());
-            }
-            if let Some(iface) = &draft.interface_in {
-                args.push("on".to_string());
-                args.push(iface.clone());
+            if draft.direction == Direction::Forward {
+                push_route_interfaces(&mut args, draft);
+            } else {
+                if let Some(direction) = draft.direction.ufw() {
+                    args.push(direction.to_string());
+                }
+                if let Some(iface) = rule_interface(draft) {
+                    args.push("on".to_string());
+                    args.push(iface.to_string());
+                }
             }
             if let Some(log) = draft.log.ufw() {
                 args.push(log.to_string());
@@ -198,6 +207,67 @@ pub fn rule_args(draft: &RuleDraft, include_comment: bool) -> Result<Vec<String>
 }
 
 /**
+ * Returns the interface a filter rule is limited to, if any.
+ *
+ * `ufw` accepts exactly one `in on`/`out on` clause on a rule that is not a route rule,
+ * and the keyword follows the direction: incoming rules name the interface they arrive
+ * on, outgoing rules name the one they leave through. Both draft fields are consulted so
+ * a rule read back from `ufw status` keeps its interface after conversion, wherever the
+ * parser stored it.
+ *
+ * # Arguments
+ *
+ * * `draft` (`&RuleDraft`) - The rule whose interface is wanted.
+ *
+ * # Returns
+ *
+ * `Option<&str>` - The interface name, or `None` when the rule is not limited to one.
+ */
+fn rule_interface(draft: &RuleDraft) -> Option<&str> {
+    match draft.direction {
+        Direction::Out => draft
+            .interface_out
+            .as_deref()
+            .or(draft.interface_in.as_deref()),
+        _ => draft
+            .interface_in
+            .as_deref()
+            .or(draft.interface_out.as_deref()),
+    }
+}
+
+/**
+ * Appends the `in on` and `out on` clauses of a forwarding rule.
+ *
+ * `in` is always emitted before `out`: `ufw` parses the first interface clause as the
+ * rule's own direction and the second as the opposite one, and `route allow out on eth1
+ * in on eth0` therefore reads back as an outgoing rule. The clauses also have to sit
+ * immediately after the action, because `ufw` answers `Invalid interface clause` to
+ * `route allow log in on eth0`.
+ *
+ * # Arguments
+ *
+ * * `args` (`&mut Vec<String>`) - The argument vector being built; it is mutated in place.
+ * * `draft` (`&RuleDraft`) - The rule draft whose interfaces are rendered.
+ *
+ * # Returns
+ *
+ * This function returns no value; the clauses are appended to `args`.
+ */
+fn push_route_interfaces(args: &mut Vec<String>, draft: &RuleDraft) {
+    if let Some(iface) = &draft.interface_in {
+        args.push("in".to_string());
+        args.push("on".to_string());
+        args.push(iface.clone());
+    }
+    if let Some(iface) = &draft.interface_out {
+        args.push("out".to_string());
+        args.push("on".to_string());
+        args.push(iface.clone());
+    }
+}
+
+/**
  * Returns the short `ufw allow 22/tcp` form, used whenever the rule is plain enough for
  * it.
  *
@@ -217,6 +287,7 @@ pub fn rule_args(draft: &RuleDraft, include_comment: bool) -> Result<Vec<String>
 fn simple_target(draft: &RuleDraft) -> Option<String> {
     if draft.direction != Direction::In
         || draft.interface_in.is_some()
+        || draft.interface_out.is_some()
         || draft.log != LogMode::None
         || draft.from_addr.is_some()
         || !draft.from_port.is_any()
@@ -299,7 +370,8 @@ fn push_endpoint(args: &mut Vec<String>, keyword: &str, addr: Option<&str>, port
  * Builds the change that adds a rule.
  *
  * The inverse deletes the rule by specification rather than by number, so it still works
- * after `ufw` renumbers the list.
+ * after `ufw` renumbers the list. A forwarding rule is deleted with `ufw route delete
+ * <rule>`; `ufw delete route …` is not valid syntax.
  *
  * # Arguments
  *
@@ -312,11 +384,12 @@ fn push_endpoint(args: &mut Vec<String>, keyword: &str, addr: Option<&str>, port
  */
 pub fn change_add(draft: &RuleDraft) -> Result<Change, String> {
     let args = rule_args(draft, true)?;
+    // Deleting by specification survives renumbering, so it is the safer inverse.
+    let undo = command_with_verb(draft, &["delete".to_string()], rule_args(draft, false)?);
     Ok(Change {
         description: format!("Add rule: {}", crate::core::explain::explain_draft(draft)),
-        steps: vec![args.clone()],
-        // Deleting by specification survives renumbering, so it is the safer inverse.
-        inverse: vec![[vec!["delete".to_string()], rule_args(draft, false)?].concat()],
+        steps: vec![args],
+        inverse: vec![undo],
     })
 }
 
@@ -422,9 +495,7 @@ pub fn change_duplicate(rule: &Rule, existing: usize) -> Result<Change, String> 
 
     Ok(Change {
         description: format!("Duplicate rule #{} below it", rule.number),
-        steps: vec![
-            insert_rule(&draft, copy, existing)?,
-        ],
+        steps: vec![insert_rule(&draft, copy, existing)?],
         // Deleting by specification survives renumbering, so it is the safer inverse.
         inverse: vec![delete_by_number(copy)],
     })
@@ -585,6 +656,11 @@ pub fn change_reset() -> Change {
 /**
  * Builds the argument vector that deletes a rule by its number.
  *
+ * The number is the one `ufw status numbered` prints, which covers filter and route
+ * rules in a single list. `ufw` has no `route delete NUM`: its parser rejects it with
+ * `'route delete NUM' unsupported. Use 'delete NUM' instead`, so this plain form is used
+ * for every rule kind.
+ *
  * # Arguments
  *
  * * `number` (`u32`) - The rule number to delete.
@@ -602,6 +678,38 @@ pub fn delete_by_number(number: u32) -> Vec<String> {
 }
 
 /**
+ * Prefixes a rule's arguments with an `ufw` verb, keeping `route` in front of it.
+ *
+ * [`rule_args`] returns a complete rule, starting with `route` when the draft forwards
+ * traffic. `ufw` wants that keyword before the verb (`route insert NUM …`, `route delete
+ * …`), so the prefix is lifted off, the verb is spliced in, and the prefix is put back.
+ * `ufw` refuses the alternatives: `delete route …` is a syntax error and `route delete
+ * NUM` is rejected outright in favour of plain `delete NUM`.
+ *
+ * # Arguments
+ *
+ * * `draft` (`&RuleDraft`) - The rule the arguments belong to; only its direction matters.
+ * * `verb` (`&[String]`) - The words that go between the prefix and the rule, such as
+ *   `insert 3` or `delete`.
+ * * `args` (`Vec<String>`) - The complete rule arguments returned by [`rule_args`].
+ *
+ * # Returns
+ *
+ * A `Vec<String>` holding the prefixed command.
+ */
+fn command_with_verb(draft: &RuleDraft, verb: &[String], args: Vec<String>) -> Vec<String> {
+    let mut body = args;
+    let mut out = Vec::with_capacity(body.len() + verb.len() + 1);
+    if draft.direction == Direction::Forward {
+        out.push("route".to_string());
+        body.remove(0);
+    }
+    out.extend(verb.iter().cloned());
+    out.extend(body);
+    out
+}
+
+/**
  * Builds the argument vector that places a rule at a given position.
  *
  * `ufw insert NUM` is only accepted when `NUM` is one of the positions the list
@@ -610,6 +718,9 @@ pub fn delete_by_number(number: u32) -> Vec<String> {
  * is exactly where that position points. This is what keeps editing, moving and
  * undoing the last rule working, and in particular the one-rule case, where the
  * delete leaves the list empty and even `insert 1` is rejected.
+ *
+ * A forwarding rule needs `ufw route insert NUM <rule>`, which
+ * [`command_with_verb`] produces.
  *
  * # Arguments
  *
@@ -632,9 +743,8 @@ pub fn insert_rule(
     if position as usize > existing {
         return Ok(args);
     }
-    let mut with_position = vec!["insert".to_string(), position.to_string()];
-    with_position.extend(args);
-    Ok(with_position)
+    let verb = ["insert".to_string(), position.to_string()];
+    Ok(command_with_verb(draft, &verb, args))
 }
 
 /**
@@ -869,6 +979,224 @@ mod tests {
         };
         let args = rule_args(&draft, true).unwrap();
         assert_eq!(args[1], "out");
+    }
+
+    #[test]
+    /**
+     * Verifies that an outgoing rule keeps the interface it leaves through.
+     *
+     * # Arguments
+     *
+     * This function takes no arguments.
+     *
+     * # Returns
+     *
+     * This function returns no value.
+     */
+    fn outbound_rules_name_their_interface_after_out() {
+        let draft = RuleDraft {
+            direction: Direction::Out,
+            interface_out: Some("eth1".into()),
+            to_addr: Some("10.0.0.0/8".into()),
+            ..Default::default()
+        };
+        assert_eq!(
+            rule_args(&draft, true).unwrap(),
+            argv(&[
+                "allow",
+                "out",
+                "on",
+                "eth1",
+                "from",
+                "any",
+                "to",
+                "10.0.0.0/8"
+            ])
+        );
+    }
+
+    #[test]
+    /**
+     * Verifies the minimal forwarding rule: `ufw route allow in on … out on …`.
+     *
+     * # Arguments
+     *
+     * This function takes no arguments.
+     *
+     * # Returns
+     *
+     * This function returns no value.
+     */
+    fn forward_rules_are_prefixed_with_route() {
+        let draft = RuleDraft {
+            direction: Direction::Forward,
+            interface_in: Some("eth0".into()),
+            interface_out: Some("eth1".into()),
+            ..Default::default()
+        };
+        assert_eq!(
+            rule_args(&draft, true).unwrap(),
+            argv(&["route", "allow", "in", "on", "eth0", "out", "on", "eth1"])
+        );
+    }
+
+    #[test]
+    /**
+     * Verifies that a forwarding rule renders every optional clause in the order
+     * `ufw` accepts.
+     *
+     * The interface clauses must come first: `ufw` answers `Invalid interface
+     * clause` to `route allow log in on eth0`.
+     *
+     * # Arguments
+     *
+     * This function takes no arguments.
+     *
+     * # Returns
+     *
+     * This function returns no value.
+     */
+    fn forward_rules_render_the_full_form() {
+        let draft = RuleDraft {
+            action: Action::Deny,
+            direction: Direction::Forward,
+            interface_in: Some("eth0".into()),
+            interface_out: Some("eth1".into()),
+            protocol: Protocol::Tcp,
+            from_addr: Some("192.168.1.0/24".into()),
+            to_addr: Some("10.0.0.0/8".into()),
+            to_port: PortSpec::single(443),
+            log: LogMode::LogAll,
+            comment: Some("VPN to LAN".into()),
+            ..Default::default()
+        };
+        assert_eq!(
+            rule_args(&draft, true).unwrap(),
+            argv(&[
+                "route",
+                "deny",
+                "in",
+                "on",
+                "eth0",
+                "out",
+                "on",
+                "eth1",
+                "log-all",
+                "proto",
+                "tcp",
+                "from",
+                "192.168.1.0/24",
+                "to",
+                "10.0.0.0/8",
+                "port",
+                "443",
+                "comment",
+                "VPN to LAN",
+            ])
+        );
+    }
+
+    #[test]
+    /**
+     * Verifies that inserting a forwarding rule keeps a single `route` prefix.
+     *
+     * `ufw route insert NUM <rule>` is the only accepted spelling; `ufw insert
+     * NUM route …` is not.
+     *
+     * # Arguments
+     *
+     * This function takes no arguments.
+     *
+     * # Returns
+     *
+     * This function returns no value.
+     */
+    fn inserting_a_forward_rule_uses_route_insert() {
+        let draft = RuleDraft {
+            direction: Direction::Forward,
+            interface_in: Some("eth0".into()),
+            interface_out: Some("eth1".into()),
+            ..Default::default()
+        };
+        assert_eq!(
+            insert_rule(&draft, 3, 5).unwrap(),
+            argv(&["route", "insert", "3", "allow", "in", "on", "eth0", "out", "on", "eth1"])
+        );
+        // Past the end of the list an insert is a plain append, route prefix included.
+        assert_eq!(
+            insert_rule(&draft, 9, 5).unwrap(),
+            rule_args(&draft, true).unwrap()
+        );
+    }
+
+    #[test]
+    /**
+     * Verifies that editing a forwarding rule deletes it by number and re-adds it
+     * as a route rule at the same position.
+     *
+     * # Arguments
+     *
+     * This function takes no arguments.
+     *
+     * # Returns
+     *
+     * This function returns no value.
+     */
+    fn editing_a_forward_rule_replaces_it_with_a_route_insert() {
+        let old = Rule {
+            number: 3,
+            action: Action::Allow,
+            direction: Direction::Forward,
+            interface_in: Some("eth0".into()),
+            interface_out: Some("eth1".into()),
+            protocol: Protocol::Any,
+            from: Endpoint::any(),
+            to: Endpoint::any(),
+            log: LogMode::None,
+            comment: None,
+            v6: false,
+            route: true,
+        };
+        let mut updated = old.to_draft();
+        updated.action = Action::Deny;
+        let change = change_edit(&old, &updated, 5).unwrap();
+        assert_eq!(change.steps[0], argv(&["--force", "delete", "3"]));
+        assert_eq!(
+            change.steps[1],
+            argv(&["route", "insert", "3", "deny", "in", "on", "eth0", "out", "on", "eth1"])
+        );
+        assert_eq!(change.inverse[1][3], "allow");
+    }
+
+    #[test]
+    /**
+     * Verifies that undoing a forwarded rule uses `ufw route delete <rule>`.
+     *
+     * `ufw delete route …` is a syntax error, so the inverse has to keep the prefix in
+     * front of the verb.
+     *
+     * # Arguments
+     *
+     * This function takes no arguments.
+     *
+     * # Returns
+     *
+     * This function returns no value.
+     */
+    fn undoing_a_forward_rule_uses_route_delete() {
+        let draft = RuleDraft {
+            direction: Direction::Forward,
+            interface_in: Some("eth0".into()),
+            interface_out: Some("eth1".into()),
+            ..Default::default()
+        };
+        let change = change_add(&draft).unwrap();
+        assert_eq!(
+            change.inverse,
+            vec![argv(&[
+                "route", "delete", "allow", "in", "on", "eth0", "out", "on", "eth1"
+            ])]
+        );
     }
 
     #[test]

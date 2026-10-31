@@ -214,7 +214,8 @@ The undo journal lives in `~/.local/state/ufw-manager-tui/journal.json`.
 ## 11. What it deliberately does not do
 
 - Raw `iptables` / `nftables` editing — the wrong abstraction for the audience.
-- NAT, port forwarding, VPN or route configuration. Forward (`FWD`) rules are shown, and read-only.
+- NAT, port forwarding or VPN configuration. Forward (`FWD`) rules are fully editable here, but they only
+  take effect once kernel forwarding is on (`net/ipv4/ip_forward=1`).
 - Container-managed rules: Docker writes its own `iptables` chains that bypass `ufw`. Those are invisible
   here, as they are to `ufw` itself.
 - A daemon, a web UI, or multi-host management.
