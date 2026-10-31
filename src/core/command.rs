@@ -420,16 +420,12 @@ fn remaining_after_delete(existing: usize) -> usize {
  *
  * # Returns
  *
- * `Result<Change, String>` - The change on success, or an error when the rule cannot be
- * rebuilt as an insert command.
+ * * `Result<Change, String>` - The change on success, or an error when the rule cannot be rebuilt as an insert command.
  */
 pub fn change_delete(rule: &Rule, existing: usize) -> Result<Change, String> {
     let draft = rule.to_draft();
     Ok(Change {
-        description: format!(
-            "Delete rule #{}: {}",
-            rule.number,
-            crate::core::explain::explain_rule(rule)
+        description: format!("Delete rule #{}: {}",rule.number,crate::core::explain::explain_rule(rule)
         ),
         steps: vec![delete_by_number(rule.number)],
         inverse: vec![insert_rule(

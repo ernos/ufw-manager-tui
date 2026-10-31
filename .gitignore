@@ -1,3 +1,5 @@
-/target
-Cargo.lock
-.history/
+target/
+debug/
+release/
+rls/
+*.o
