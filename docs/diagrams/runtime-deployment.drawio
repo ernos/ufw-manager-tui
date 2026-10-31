@@ -1,0 +1,103 @@
+<mxfile host="app.diagrams.net" version="24.0.0">
+  <diagram id="runtime-deployment" name="Runtime and Processes">
+    <mxGraphModel dx="1300" dy="850" grid="0" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1240" pageHeight="800" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+
+        <mxCell id="title" value="Runtime, Processes and Files - what exists while the app is running" style="text;html=1;fontSize=20;fontStyle=1;align=left;verticalAlign=middle;" vertex="1" parent="1">
+          <mxGeometry x="40" y="14" width="900" height="36" as="geometry" />
+        </mxCell>
+
+        <mxCell id="tty" value="&lt;b&gt;Terminal (TTY)&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size:10px&quot;&gt;raw mode + alternate screen,&lt;br&gt;restored by TerminalGuard on drop,&lt;br&gt;panic hook and TERM signals&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;strokeWidth=2;arcSize=8;" vertex="1" parent="1">
+          <mxGeometry x="40" y="90" width="190" height="100" as="geometry" />
+        </mxCell>
+
+        <mxCell id="tui" value="Process 1 - ufw-manager-tui (one thread for rendering)" style="swimlane;html=1;rounded=1;startSize=28;fillColor=#e8f0fe;strokeColor=#6c8ebf;fontStyle=1;fontSize=12;verticalAlign=top;align=left;spacingLeft=12;" vertex="1" parent="1">
+          <mxGeometry x="300" y="90" width="420" height="330" as="geometry" />
+        </mxCell>
+        <mxCell id="loop" value="&lt;b&gt;Event loop&lt;/b&gt; (main thread)&lt;br&gt;&lt;font style=&quot;font-size:10px&quot;&gt;draw -&amp;gt; escalation? -&amp;gt; poll(200 ms)&lt;br&gt;-&amp;gt; handle_key -&amp;gt; tick&lt;br&gt;backend calls are synchronous,&lt;br&gt;each ufw call bounded to 10 s&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#b1ddf0;strokeColor=#10739e;strokeWidth=2;fontSize=11;align=left;spacingLeft=8;" vertex="1" parent="tui">
+          <mxGeometry x="20" y="40" width="380" height="100" as="geometry" />
+        </mxCell>
+        <mxCell id="monitor" value="&lt;b&gt;BlockMonitor thread&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size:10px&quot;&gt;tails /var/log/ufw.log or journalctl -k -f,&lt;br&gt;aggregates by source + protocol + port,&lt;br&gt;15 min retention, publishes through a Mutex;&lt;br&gt;stopped with an AtomicBool&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=11;align=left;spacingLeft=8;" vertex="1" parent="tui">
+          <mxGeometry x="20" y="155" width="380" height="100" as="geometry" />
+        </mxCell>
+        <mxCell id="wd" value="Process 2 - detached revert helper&lt;br&gt;&lt;font style=&quot;font-size:10px&quot;&gt;same binary, --internal-revert-after N --nonce &amp;lt;state&gt;&lt;br&gt;stdin/stdout/stderr to null so it survives the terminal&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;strokeWidth=2;arcSize=8;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="800" y="90" width="390" height="90" as="geometry" />
+        </mxCell>
+
+        <mxCell id="sudo" value="&lt;b&gt;sudo -v&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size:10px&quot;&gt;only on X or first write;&lt;br&gt;terminal is restored first,&lt;br&gt;then raw mode re-entered&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;strokeWidth=2;arcSize=8;" vertex="1" parent="1">
+          <mxGeometry x="300" y="470" width="200" height="90" as="geometry" />
+        </mxCell>
+
+        <mxCell id="ufwproc" value="&lt;b&gt;ufw child processes&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size:10px&quot;&gt;status numbered, status verbose,&lt;br&gt;app list, --dry-run, every change step&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;strokeWidth=2;arcSize=8;" vertex="1" parent="1">
+          <mxGeometry x="560" y="470" width="230" height="90" as="geometry" />
+        </mxCell>
+
+        <mxCell id="kernel" value="&lt;b&gt;netfilter / nftables&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size:10px&quot;&gt;the actual firewall&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;strokeWidth=2;arcSize=8;" vertex="1" parent="1">
+          <mxGeometry x="850" y="470" width="170" height="90" as="geometry" />
+        </mxCell>
+
+        <mxCell id="f_wd" value="&lt;b&gt;watchdog.json&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size:10px&quot;&gt;inverse steps + description&lt;/font&gt;" style="shape=cylinder3;whiteSpace=wrap;html=1;boundedLbl=1;backgroundOutline=1;size=10;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="800" y="215" width="180" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="f_cancel" value="&lt;b&gt;watchdog.json.cancel&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size:10px&quot;&gt;written on Y&lt;/font&gt;" style="shape=cylinder3;whiteSpace=wrap;html=1;boundedLbl=1;backgroundOutline=1;size=10;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="1010" y="215" width="180" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="f_cfg" value="&lt;b&gt;config.toml&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size:10px&quot;&gt;XDG config dir&lt;/font&gt;" style="shape=cylinder3;whiteSpace=wrap;html=1;boundedLbl=1;backgroundOutline=1;size=10;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="40" y="250" width="180" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="f_journal" value="&lt;b&gt;journal.json&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size:10px&quot;&gt;undo stack, XDG state dir&lt;/font&gt;" style="shape=cylinder3;whiteSpace=wrap;html=1;boundedLbl=1;backgroundOutline=1;size=10;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="40" y="360" width="180" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="f_log" value="&lt;b&gt;/var/log/ufw.log&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size:10px&quot;&gt;blocked packets&lt;/font&gt;" style="shape=cylinder3;whiteSpace=wrap;html=1;boundedLbl=1;backgroundOutline=1;size=10;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="800" y="590" width="180" height="80" as="geometry" />
+        </mxCell>
+
+        <mxCell id="e_tty_tui" value="keys in / frames out" style="edgeStyle=orthogonalEdgeStyle;rounded=1;strokeColor=#6c8ebf;strokeWidth=2;endArrow=block;endFill=1;fontSize=10;startArrow=block;startFill=1;" edge="1" parent="1" source="tty" target="loop">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_tui_cfg" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;strokeColor=#d6b656;strokeWidth=2;endArrow=block;endFill=1;fontSize=10;" edge="1" parent="1" source="loop" target="f_cfg">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_tui_journal" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;strokeColor=#d6b656;strokeWidth=2;endArrow=block;endFill=1;fontSize=10;" edge="1" parent="1" source="journal" target="f_journal">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_monitor_log" value="tail" style="edgeStyle=orthogonalEdgeStyle;rounded=1;strokeColor=#82b366;strokeWidth=2;endArrow=block;endFill=1;fontSize=10;" edge="1" parent="1" source="monitor" target="f_log">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_loop_sudo" value="X / first write" style="edgeStyle=orthogonalEdgeStyle;rounded=1;strokeColor=#6c8ebf;strokeWidth=2;endArrow=block;endFill=1;fontSize=10;" edge="1" parent="1" source="loop" target="sudo">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_loop_ufw" value="argv (no shell)" style="edgeStyle=orthogonalEdgeStyle;rounded=1;strokeColor=#6c8ebf;strokeWidth=2;endArrow=block;endFill=1;fontSize=10;" edge="1" parent="1" source="loop" target="ufwproc">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_sudo_ufw" value="runs with root" style="edgeStyle=orthogonalEdgeStyle;rounded=1;strokeColor=#666666;strokeWidth=2;endArrow=block;endFill=1;fontSize=10;dashed=1;" edge="1" parent="1" source="sudo" target="ufwproc">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_ufw_kernel" value="writes rule set" style="edgeStyle=orthogonalEdgeStyle;rounded=1;strokeColor=#666666;strokeWidth=2;endArrow=block;endFill=1;fontSize=10;" edge="1" parent="1" source="ufwproc" target="kernel">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_loop_wd" value="spawn when a change could cut SSH" style="edgeStyle=orthogonalEdgeStyle;rounded=1;strokeColor=#d79b00;strokeWidth=2;endArrow=block;endFill=1;fontSize=10;" edge="1" parent="1" source="loop" target="wd">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_wd_state" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;strokeColor=#d6b656;strokeWidth=2;endArrow=block;endFill=1;fontSize=10;" edge="1" parent="1" source="wd" target="f_wd">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_cancel" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;strokeColor=#d6b656;strokeWidth=2;endArrow=block;endFill=1;fontSize=10;" edge="1" parent="1" source="loop" target="f_cancel">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_wd_poll" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;strokeColor=#d79b00;strokeWidth=1;dashed=1;endArrow=block;endFill=1;fontSize=10;" edge="1" parent="1" source="wd" target="f_cancel">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_wd_ufw" value="replays inverse argv" style="edgeStyle=orthogonalEdgeStyle;rounded=1;strokeColor=#d79b00;strokeWidth=2;endArrow=block;endFill=1;fontSize=10;" edge="1" parent="1" source="wd" target="ufwproc">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <mxCell id="note" value="Privilege model: started with sudo everything works; started unprivileged the app is read-only and reads on/off plus log level from the world-readable /etc/ufw/ufw.conf. --readonly and --no-escalate disable the two write paths above." style="text;html=1;fontSize=11;fontColor=#666666;align=left;verticalAlign=top;whiteSpace=wrap;" vertex="1" parent="1">
+          <mxGeometry x="40" y="620" width="700" height="60" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

@@ -1,0 +1,137 @@
+<mxfile host="app.diagrams.net" version="24.0.0">
+  <diagram id="component-relationships" name="Component Relationships">
+    <mxGraphModel dx="1500" dy="1000" grid="0" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1420" pageHeight="1000" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+
+        <mxCell id="title" value="Component Relationships (C4 Level 3) - modules, the Backend seam and its two implementations" style="text;html=1;fontSize=20;fontStyle=1;align=left;verticalAlign=middle;" vertex="1" parent="1">
+          <mxGeometry x="40" y="14" width="900" height="36" as="geometry" />
+        </mxCell>
+
+        <mxCell id="g_orch" value="Entry and orchestration" style="swimlane;html=1;rounded=1;startSize=28;fillColor=#e8f0fe;strokeColor=#6c8ebf;fontStyle=1;fontSize=13;verticalAlign=top;align=left;spacingLeft=12;" vertex="1" parent="1">
+          <mxGeometry x="40" y="70" width="300" height="430" as="geometry" />
+        </mxCell>
+        <mxCell id="main" value="&lt;b&gt;main.rs&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size:10px&quot;&gt;Cli -&amp;gt; Config -&amp;gt; backend -&amp;gt; App&lt;br&gt;TerminalGuard, event loop, dump_state&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=11;align=left;spacingLeft=8;" vertex="1" parent="g_orch">
+          <mxGeometry x="20" y="40" width="260" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="cli" value="&lt;b&gt;cli.rs&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size:10px&quot;&gt;clap flags: --demo --readonly&lt;br&gt;--no-escalate -y --theme --dump-state&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=11;align=left;spacingLeft=8;" vertex="1" parent="g_orch">
+          <mxGeometry x="20" y="120" width="260" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="config" value="&lt;b&gt;config.rs&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size:10px&quot;&gt;Config + RuleDefaults (TOML,&lt;br&gt;serde default + deny_unknown_fields)&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=11;align=left;spacingLeft=8;" vertex="1" parent="g_orch">
+          <mxGeometry x="20" y="200" width="260" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="app" value="&lt;b&gt;app.rs&lt;/b&gt; - App state machine&lt;br&gt;&lt;font style=&quot;font-size:10px&quot;&gt;handle_key, submit, apply, undo,&lt;br&gt;refresh, reanalyse, escalation, queue&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#b1ddf0;strokeColor=#10739e;strokeWidth=2;fontSize=11;align=left;spacingLeft=8;" vertex="1" parent="g_orch">
+          <mxGeometry x="20" y="285" width="260" height="120" as="geometry" />
+        </mxCell>
+
+        <mxCell id="g_ui" value="ui/ - rendering only" style="swimlane;html=1;rounded=1;startSize=28;fillColor=#fde9d9;strokeColor=#d79b00;fontStyle=1;fontSize=13;verticalAlign=top;align=left;spacingLeft=12;" vertex="1" parent="1">
+          <mxGeometry x="40" y="530" width="300" height="380" as="geometry" />
+        </mxCell>
+        <mxCell id="uidraw" value="&lt;b&gt;ui/mod.rs&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size:10px&quot;&gt;draw(frame, &amp;amp;App): header, tabs,&lt;br&gt;status, watchdog, footer, modals&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;fontSize=11;align=left;spacingLeft=8;" vertex="1" parent="g_ui">
+          <mxGeometry x="20" y="40" width="260" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="uitabs" value="&lt;b&gt;Tab modules&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size:10px&quot;&gt;home · rules · wizard · test&lt;br&gt;activity · presets · help · settings&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;fontSize=11;align=left;spacingLeft=8;" vertex="1" parent="g_ui">
+          <mxGeometry x="20" y="120" width="260" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="uitheme" value="&lt;b&gt;theme.rs · keys.rs · widgets.rs&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size:10px&quot;&gt;Palette + ASCII fallback; key tables&lt;br&gt;that drive footer and Help; TextInput&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;fontSize=11;align=left;spacingLeft=8;" vertex="1" parent="g_ui">
+          <mxGeometry x="20" y="210" width="260" height="80" as="geometry" />
+        </mxCell>
+
+        <mxCell id="g_core" value="core/ - pure logic (no I/O, no terminal)" style="swimlane;html=1;rounded=1;startSize=28;fillColor=#e6f4e2;strokeColor=#82b366;fontStyle=1;fontSize=13;verticalAlign=top;align=left;spacingLeft=12;" vertex="1" parent="1">
+          <mxGeometry x="370" y="70" width="470" height="840" as="geometry" />
+        </mxCell>
+        <mxCell id="rule" value="&lt;b&gt;rule.rs&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size:10px&quot;&gt;Rule, RuleDraft, Action,&lt;br&gt;Direction, Protocol, PortSpec,&lt;br&gt;Endpoint, LogMode&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=11;align=left;spacingLeft=8;" vertex="1" parent="g_core">
+          <mxGeometry x="20" y="40" width="200" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="firewall" value="&lt;b&gt;firewall.rs&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size:10px&quot;&gt;FirewallState, Policy,&lt;br&gt;RoutedPolicy, LogLevel&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=11;align=left;spacingLeft=8;" vertex="1" parent="g_core">
+          <mxGeometry x="240" y="40" width="210" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="parse" value="&lt;b&gt;parse.rs&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size:10px&quot;&gt;parse_status_numbered,&lt;br&gt;parse_status_verbose, app profiles,&lt;br&gt;ufw.conf, ss, ufw log lines&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=11;align=left;spacingLeft=8;" vertex="1" parent="g_core">
+          <mxGeometry x="20" y="140" width="200" height="90" as="geometry" />
+        </mxCell>
+        <mxCell id="command" value="&lt;b&gt;command.rs&lt;/b&gt; - only place&lt;br&gt;that knows ufw syntax&lt;br&gt;&lt;font style=&quot;font-size:10px&quot;&gt;Change + change_add / delete /&lt;br&gt;edit / move / policy / reset&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#a9d18e;strokeColor=#82b366;strokeWidth=2;fontSize=11;align=left;spacingLeft=8;" vertex="1" parent="g_core">
+          <mxGeometry x="240" y="140" width="210" height="90" as="geometry" />
+        </mxCell>
+        <mxCell id="explain" value="&lt;b&gt;explain.rs&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size:10px&quot;&gt;explain_rule / explain_draft,&lt;br&gt;service names, short_summary&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=11;align=left;spacingLeft=8;" vertex="1" parent="g_core">
+          <mxGeometry x="20" y="250" width="200" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="risk" value="&lt;b&gt;risk.rs&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size:10px&quot;&gt;RiskLevel, Assessment,&lt;br&gt;assess_state, Suggestion, Fix,&lt;br&gt;find_shadowed&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=11;align=left;spacingLeft=8;" vertex="1" parent="g_core">
+          <mxGeometry x="240" y="250" width="210" height="90" as="geometry" />
+        </mxCell>
+        <mxCell id="simulate" value="&lt;b&gt;simulate.rs&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size:10px&quot;&gt;Packet, TraceStep, Trace,&lt;br&gt;simulate / simulate_with_pending&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=11;align=left;spacingLeft=8;" vertex="1" parent="g_core">
+          <mxGeometry x="20" y="360" width="200" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="lockout" value="&lt;b&gt;lockout.rs&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size:10px&quot;&gt;Session, ChangeKind,&lt;br&gt;PendingChange, GuardVerdict,&lt;br&gt;check()&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#a9d18e;strokeColor=#82b366;strokeWidth=2;fontSize=11;align=left;spacingLeft=8;" vertex="1" parent="g_core">
+          <mxGeometry x="240" y="360" width="210" height="90" as="geometry" />
+        </mxCell>
+        <mxCell id="presets" value="&lt;b&gt;presets.rs&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size:10px&quot;&gt;Preset, PresetCard, LanInfo,&lt;br&gt;PresetContext, library()&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=11;align=left;spacingLeft=8;" vertex="1" parent="g_core">
+          <mxGeometry x="20" y="470" width="200" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="undo" value="&lt;b&gt;undo.rs&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size:10px&quot;&gt;Journal, UndoEntry, default_path&lt;br&gt;(JSON at ~/.local/state)&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=11;align=left;spacingLeft=8;" vertex="1" parent="g_core">
+          <mxGeometry x="240" y="470" width="210" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="util" value="&lt;b&gt;util.rs&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size:10px&quot;&gt;utc_hms, ago, count,&lt;br&gt;ellipsize&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=11;align=left;spacingLeft=8;" vertex="1" parent="g_core">
+          <mxGeometry x="20" y="580" width="200" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="corenote" value="Both highlighted modules are the safety-critical pair: command.rs builds argument vectors, lockout.rs refuses changes that would cut the SSH session." style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#82b366;dashed=1;fontSize=10;align=left;spacingLeft=8;" vertex="1" parent="g_core">
+          <mxGeometry x="20" y="680" width="430" height="60" as="geometry" />
+        </mxCell>
+
+        <mxCell id="g_back" value="backend/ - the Backend seam" style="swimlane;html=1;rounded=1;startSize=28;fillColor=#e8f0fe;strokeColor=#6c8ebf;fontStyle=1;fontSize=13;verticalAlign=top;align=left;spacingLeft=12;" vertex="1" parent="1">
+          <mxGeometry x="880" y="70" width="330" height="560" as="geometry" />
+        </mxCell>
+        <mxCell id="trait" value="&lt;b&gt;&amp;lt;&amp;lt;interface&amp;gt;&amp;gt; Backend&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size:10px&quot;&gt;label, is_root, can_write, read_state,&lt;br&gt;app_profiles, listening, counters, run,&lt;br&gt;dry_run, ssh_port, ssh_session, lan, interfaces,&lt;br&gt;may_escalate, escalate, log_path&lt;br&gt;&lt;br&gt;returns core types: FirewallState, Rule,&lt;br&gt;Session, LanInfo, AppProfile&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;strokeWidth=2;fontSize=11;align=left;spacingLeft=8;fontStyle=0;" vertex="1" parent="g_back">
+          <mxGeometry x="20" y="40" width="290" height="100" as="geometry" />
+        </mxCell>
+        <mxCell id="ufwcli" value="&lt;b&gt;ufw.rs - UfwCli&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size:10px&quot;&gt;spawns ufw, sudo -v escalation,&lt;br&gt;10 s timeout, LC_ALL=C,&lt;br&gt;reads /etc/ufw/applications.d&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#b1ddf0;strokeColor=#10739e;fontSize=11;align=left;spacingLeft=8;" vertex="1" parent="g_back">
+          <mxGeometry x="20" y="160" width="290" height="90" as="geometry" />
+        </mxCell>
+        <mxCell id="mock" value="&lt;b&gt;mock.rs - MockBackend&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size:10px&quot;&gt;in-memory firewall from DEMO_STATUS;&lt;br&gt;used by --demo and every integration test&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#b1ddf0;strokeColor=#10739e;fontSize=11;align=left;spacingLeft=8;" vertex="1" parent="g_back">
+          <mxGeometry x="20" y="270" width="290" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="counters" value="&lt;b&gt;counters.rs - HitCounters&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size:10px&quot;&gt;nft -j list ruleset, mapped by&lt;br&gt;position in ufw-user-input; all-or-nothing&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=11;align=left;spacingLeft=8;" vertex="1" parent="g_back">
+          <mxGeometry x="20" y="370" width="290" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="logs" value="&lt;b&gt;logs.rs - BlockMonitor&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size:10px&quot;&gt;background thread tails ufw.log or&lt;br&gt;journalctl -k -f, aggregates rows;&lt;br&gt;started by App::bootstrap&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=11;align=left;spacingLeft=8;" vertex="1" parent="g_back">
+          <mxGeometry x="20" y="460" width="290" height="70" as="geometry" />
+        </mxCell>
+
+        <mxCell id="g_probe" value="Probing and side effects" style="swimlane;html=1;rounded=1;startSize=28;fillColor=#fff7e0;strokeColor=#d6b656;fontStyle=1;fontSize=13;verticalAlign=top;align=left;spacingLeft=12;" vertex="1" parent="1">
+          <mxGeometry x="880" y="660" width="330" height="250" as="geometry" />
+        </mxCell>
+        <mxCell id="probe" value="&lt;b&gt;probe.rs&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size:10px&quot;&gt;detect_lan (ip route / addr),&lt;br&gt;interfaces, ssh_port from sshd_config,&lt;br&gt;SSH_CONNECTION -&amp;gt; Session;&lt;br&gt;used by UfwCli at construction&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=11;align=left;spacingLeft=8;" vertex="1" parent="g_probe">
+          <mxGeometry x="20" y="40" width="290" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="watchdog" value="&lt;b&gt;watchdog.rs&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size:10px&quot;&gt;Watchdog handle + WatchdogState;&lt;br&gt;spawn() detached helper, confirm(),&lt;br&gt;run_revert_helper();&lt;br&gt;spawned by App::apply&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;fontSize=11;align=left;spacingLeft=8;" vertex="1" parent="g_probe">
+          <mxGeometry x="20" y="135" width="290" height="90" as="geometry" />
+        </mxCell>
+
+        <mxCell id="e_main_app" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;strokeColor=#6c8ebf;strokeWidth=2;endArrow=block;endFill=1;" edge="1" parent="1" source="main" target="app">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_app_trait" value="&lt;font style=&quot;font-size:10px&quot;&gt;Box&amp;lt;dyn Backend&amp;gt;&lt;/font&gt;" style="edgeStyle=orthogonalEdgeStyle;rounded=1;strokeColor=#6c8ebf;strokeWidth=2;endArrow=block;endFill=1;html=1;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="app" target="trait">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_ufw_trait" value="implements" style="edgeStyle=orthogonalEdgeStyle;rounded=1;strokeColor=#10739e;strokeWidth=1;dashed=1;endArrow=block;endFill=0;html=1;fontSize=10;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="ufwcli" target="trait">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_mock_trait" value="implements" style="edgeStyle=orthogonalEdgeStyle;rounded=1;strokeColor=#10739e;strokeWidth=1;dashed=1;endArrow=block;endFill=0;html=1;fontSize=10;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="mock" target="trait">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_app_core" value="calls" style="edgeStyle=orthogonalEdgeStyle;rounded=1;strokeColor=#82b366;strokeWidth=2;endArrow=block;endFill=1;html=1;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="app" target="command">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_app_ui" value="&lt;font style=&quot;font-size:10px&quot;&gt;ui::draw(&amp;amp;App): read-only&lt;/font&gt;" style="edgeStyle=orthogonalEdgeStyle;rounded=1;strokeColor=#d79b00;strokeWidth=2;endArrow=block;endFill=1;html=1;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="app" target="uidraw">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_main_ui" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;strokeColor=#d79b00;strokeWidth=2;endArrow=block;endFill=1;" edge="1" parent="1" source="main" target="uidraw">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="legend" value="Layering rule: ui/ never mutates state or touches the backend; core/ never spawns a process or reads a file; all OS access goes through the Backend trait." style="text;html=1;fontSize=11;fontColor=#666666;align=left;verticalAlign=middle;" vertex="1" parent="1">
+          <mxGeometry x="40" y="930" width="900" height="30" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>
