@@ -2,9 +2,14 @@
 //!
 //! The mock backend makes these deterministic: no root, no real firewall, no terminal.
 
+use std::io::Write;
+use std::path::Path;
+use std::time::{Duration, Instant};
+
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
 use ufw_manager::app::{App, AppOptions, Tab, WizardStep};
+use ufw_manager::backend::logs::BlockMonitor;
 use ufw_manager::backend::mock::MockBackend;
 use ufw_manager::config::Config;
 use ufw_manager::ui::theme::Theme;
@@ -1573,4 +1578,250 @@ fn settings_text_input_commits_the_value() {
     press(&mut app, KeyCode::Enter);
     assert!(app.settings_input.is_none());
     assert_eq!(app.config.defaults.interface, "q1");
+}
+
+/**
+ * Appends one `[UFW BLOCK]` line to a log file the activity monitor is tailing.
+ *
+ * The file is flushed so the reader thread can pick the line up immediately.
+ *
+ * # Arguments
+ *
+ * * `path` (`&Path`) - The log file to append to.
+ *
+ * # Returns
+ *
+ * `()` - This function returns no value; it panics when the file cannot be
+ * written.
+ */
+fn append_block_line(path: &Path) {
+    let mut file = std::fs::OpenOptions::new()
+        .append(true)
+        .open(path)
+        .expect("open log file");
+    writeln!(
+        file,
+        "Oct 30 08:23:50 host kernel: [1.0] [UFW BLOCK] IN=eno1 OUT= MAC=aa SRC=203.0.113.7 DST=192.168.1.19 LEN=60 PROTO=TCP SPT=51000 DPT=22"
+    )
+    .expect("write log line");
+    file.flush().expect("flush log line");
+}
+/**
+ * Appends two `[UFW BLOCK]` lines from two different sources.
+ *
+ * Two lines, two sources, two rows: the monitor aggregates by
+ * `(source, port, protocol)`, so distinct sources can never fold together.
+ *
+ * # Arguments
+ *
+ * * `path` (`&Path`) - The log file to append to.
+ *
+ * # Returns
+ *
+ * `()` - This function returns no value; it panics when the file cannot be
+ * written.
+ */
+fn append_two_block_lines(path: &Path) {
+    let mut file = std::fs::OpenOptions::new()
+        .append(true)
+        .open(path)
+        .expect("open log file");
+    writeln!(
+        file,
+        "Oct 30 08:23:50 host kernel: [1.0] [UFW BLOCK] IN=wg0 OUT= MAC=aa SRC=203.0.5.7 DST=192.168.1.20 LEN=60 PROTO=TCP SPT=51000 DPT=222"
+    )
+    .expect("write log line");
+    writeln!(
+        file,
+        "Oct 30 08:23:50 host kernel: [1.0] [UFW BLOCK] IN=eno1 OUT= MAC=aa SRC=201.0.5.7 DST=192.168.1.19 LEN=60 PROTO=TCP SPT=51000 DPT=22"
+    )
+    .expect("write log line");
+    file.flush().expect("flush log line");
+}
+/**
+ * Waits until the activity monitor has aggregated at least one row.
+ *
+ * The reader thread polls its source, so the test has to give it a moment. It
+ * panics instead of hanging forever when nothing arrives.
+ *
+ * # Arguments
+ *
+ * * `app` (`&mut App`) - The application whose monitor is polled.
+ *
+ * # Returns
+ *
+ * `()` - This function returns no value; it panics on timeout.
+ */
+fn wait_for_activity_rows(app: &mut App) {
+    let deadline = Instant::now() + Duration::from_secs(10);
+    while Instant::now() < deadline {
+        if !app.blocks.rows().is_empty() {
+            return;
+        }
+        std::thread::sleep(Duration::from_millis(25));
+    }
+    panic!("the log tailer never picked up the appended line");
+}
+
+/**
+ * Appends block lines until the monitor shows a row.
+ *
+ * The reader thread starts at the end of the file, so a line written before it
+ * has opened the file is skipped. Appending until one shows up keeps the test
+ * independent of that startup race.
+ *
+ * # Arguments
+ *
+ * * `app` (`&mut App`) - The application whose monitor is polled.
+ * * `path` (`&Path`) - The log file the monitor tails.
+ *
+ * # Returns
+ *
+ * `()` - This function returns no value; it panics on timeout.
+ */
+fn append_until_a_row_shows_up(app: &mut App, path: &Path) {
+    let deadline = Instant::now() + Duration::from_secs(10);
+    while Instant::now() < deadline {
+        append_block_line(path);
+        std::thread::sleep(Duration::from_millis(100));
+        if !app.blocks.rows().is_empty() {
+            return;
+        }
+    }
+    panic!("the log tailer never picked up an appended line");
+}
+/**
+ * Waits until the monitor has aggregated at least `expected` rows.
+ *
+ * The lines are written once, before the wait, so the count only grows towards
+ * `expected` and the assertion that follows stays exact.
+ *
+ * # Arguments
+ *
+ * * `app` (`&mut App`) - The application whose monitor is polled.
+ * * `expected` (`usize`) - Row count to wait for.
+ *
+ * # Returns
+ *
+ * `()` - This function returns no value; it panics on timeout.
+ */
+fn wait_for_row_count(app: &mut App, expected: usize) {
+    let deadline = Instant::now() + Duration::from_secs(10);
+    while Instant::now() < deadline {
+        if app.blocks.rows().len() >= expected {
+            return;
+        }
+        std::thread::sleep(Duration::from_millis(25));
+    }
+    panic!("the log tailer never aggregated {expected} rows");
+}
+#[test]
+/**
+ * Verifies that `c` on the Activity tab clears the blocked-traffic rows and that
+ * they stay cleared: the next tick must not reload them from the monitor, which
+ * keeps aggregating new traffic.
+ *
+ * # Arguments
+ *
+ * This function takes no arguments.
+ *
+ * # Returns
+ *
+ * `()` - This function returns no value; it asserts and panics on failure.
+ */
+fn clear_on_the_activity_tab_empties_the_view_for_good() {
+    let dir = tempfile::tempdir().expect("temp dir");
+    let log = dir.path().join("ufw.log");
+    std::fs::write(&log, "").expect("create log file");
+
+    let mut app = app();
+    app.blocks = BlockMonitor::start(Some(log.clone()));
+    app.tab = Tab::Activity;
+
+    append_until_a_row_shows_up(&mut app, &log);
+    // Let any line still in flight land before the view is cleared.
+    std::thread::sleep(Duration::from_millis(500));
+    app.tick();
+    assert!(
+        !app.activity_rows.is_empty(),
+        "the row should be visible before clearing"
+    );
+
+    press(&mut app, KeyCode::Char('c'));
+    assert!(app.activity_rows.is_empty(), "c must clear the view");
+
+    app.tick();
+    assert!(
+        app.activity_rows.is_empty(),
+        "the rows must not come back on the next tick"
+    );
+    assert_eq!(app.activity_cursor, 0);
+
+    append_block_line(&log);
+    wait_for_activity_rows(&mut app);
+    app.tick();
+    assert_eq!(
+        app.activity_rows.len(),
+        1,
+        "new traffic should still show up after a clear"
+    );
+}
+
+#[test]
+/**
+ * Verifies that clearing one source at the monitor level removes exactly that
+ * source's row from the Activity view, once the view is re-derived.
+ *
+ * # Arguments
+ *
+ * This function takes no arguments.
+ *
+ * # Returns
+ *
+ * `()` - This function returns no value; it asserts and panics on failure.
+ */
+fn clear_activities_list_from_source() {
+    let dir = tempfile::tempdir().expect("temp dir");
+    let log = dir.path().join("ufw.log");
+    std::fs::write(&log, "").expect("create log file");
+
+    let mut app = app();
+    app.blocks = BlockMonitor::start(Some(log.clone()));
+    app.tab = Tab::Activity;
+
+    // One line first, so the tailer is provably watching before the rest is written.
+    append_until_a_row_shows_up(&mut app, &log);
+    append_two_block_lines(&log);
+    wait_for_row_count(&mut app, 3);
+
+    app.tick();
+    assert_eq!(
+        app.activity_rows.len(),
+        3,
+        "every source should be listed before one of them is cleared"
+    );
+
+    let doomed = app
+        .activity_rows
+        .iter()
+        .find(|row| row.dpt == 222)
+        .expect("the second source should be listed")
+        .src;
+
+    assert_eq!(
+        app.blocks.clear_source(doomed),
+        1,
+        "exactly one row belongs to that source"
+    );
+
+    app.tick();
+    assert_eq!(
+        app.activity_rows.len(),
+        2,
+        "only the cleared source should disappear"
+    );
+    assert!(
+        app.activity_rows.iter().all(|row| row.src != doomed),
+        "no row from the cleared source may survive"
+    );
 }

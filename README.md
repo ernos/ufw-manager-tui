@@ -113,6 +113,7 @@ always shows the ones that apply right now.
 | `q` | Quit |
 
 On the Rules tab: `a` add, `e` edit, `d` delete, `y` duplicate, `x` move, `t` test, `/` filter, `n` note.
+On the Activity tab: `SPACE` pause live updates, `B` block the selected source, `c` clear the view.
 
 ## 6. The tabs
 

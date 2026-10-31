@@ -2847,7 +2847,8 @@ impl App {
      * Handles keys on the Activity tab.
      *
      * Navigation keys move the row cursor, Space pauses or resumes live updates,
-     * `B` blocks the selected source, and `c` clears the visible rows.
+     * `B` blocks the selected source, and `c` clears the visible rows by emptying
+     * the block monitor, so the view stays clear until new traffic arrives.
      *
      * # Arguments
      *
@@ -2877,7 +2878,11 @@ impl App {
             }
             KeyCode::Char('B') => self.block_selected_source(),
             KeyCode::Char('c') => {
+                // The rows are reloaded from the monitor on every tick, so the monitor has to
+                // forget them too; otherwise the next tick would put them straight back.
+                self.blocks.clear();
                 self.activity_rows.clear();
+                self.activity_cursor = 0;
                 self.set_status(StatusLevel::Info, "cleared the view");
             }
             _ => {}

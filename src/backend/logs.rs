@@ -177,6 +177,51 @@ impl BlockMonitor {
     }
 
     /**
+     * Empties the aggregation table.
+     *
+     * The reader thread keeps running, so rows only come back when new blocked
+     * packets are logged; everything aggregated so far is discarded.
+     *
+     * # Arguments
+     *
+     * * `self` (`&BlockMonitor`) - The monitor whose table is emptied.
+     *
+     * # Returns
+     *
+     * This method returns no value. A poisoned lock leaves the table untouched.
+     */
+    pub fn clear(&self) {
+        if let Ok(mut table) = self.table.lock() {
+            table.clear();
+        }
+    }
+
+    /**
+     * Removes every aggregated row whose source address is `src`.
+     *
+     * The reader thread keeps running, so an address only reappears if it is
+     * seen again in the log. Rows are counted, not addresses: one source that
+     * was blocked on three ports drops three rows.
+     *
+     * # Arguments
+     *
+     * * `self` (`&BlockMonitor`) - The monitor whose table is pruned.
+     * * `src` (`IpAddr`) - Source address to forget.
+     *
+     * # Returns
+     *
+     * `usize` - How many rows were dropped, or `0` when the lock is poisoned.
+     */
+    pub fn clear_source(&self, src: IpAddr) -> usize {
+        let Ok(mut table) = self.table.lock() else {
+            return 0;
+        };
+        let before = table.len();
+        table.retain(|(addr, _, _), _| *addr != src);
+        before - table.len()
+    }
+
+    /**
      * Returns the human-readable name of the log source being read.
      *
      * # Arguments
@@ -483,6 +528,83 @@ mod tests {
         let rows = monitor.rows();
         assert_eq!(rows[0].dpt, 3306);
         assert_eq!(monitor.total(), 4);
+    }
+
+    #[test]
+    /**
+     * Verifies that [`BlockMonitor::clear`] drops every aggregated row, and that
+     * counting starts from one again for traffic logged afterwards.
+     *
+     * # Arguments
+     *
+     * This function takes no arguments.
+     *
+     * # Returns
+     *
+     * `()` - This function returns no value; it asserts and panics on failure.
+     */
+    fn clear_forgets_every_aggregated_row() {
+        let table = table();
+        record(&table, &line("1.2.3.4", 22, "TCP"));
+        let monitor = BlockMonitor {
+            table: Arc::clone(&table),
+            stop: Arc::new(AtomicBool::new(false)),
+            source: "test".into(),
+            handle: None,
+        };
+        assert_eq!(monitor.rows().len(), 1);
+
+        monitor.clear();
+        assert!(monitor.rows().is_empty());
+        assert_eq!(monitor.total(), 0);
+
+        record(&table, &line("1.2.3.4", 22, "TCP"));
+        let rows = monitor.rows();
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].count, 1);
+    }
+
+    #[test]
+    /**
+     * Verifies that [`BlockMonitor::clear_source`] drops only the rows belonging
+     * to one source address, reports how many went, and leaves the rest alone.
+     *
+     * # Arguments
+     *
+     * This function takes no arguments.
+     *
+     * # Returns
+     *
+     * `()` - This function returns no value; it asserts and panics on failure.
+     */
+    fn clear_source_only_drops_that_address() {
+        let table = table();
+        record(&table, &line("1.2.3.4", 22, "TCP"));
+        record(&table, &line("1.2.3.4", 80, "TCP"));
+        record(&table, &line("5.6.7.8", 22, "TCP"));
+        let monitor = BlockMonitor {
+            table: Arc::clone(&table),
+            stop: Arc::new(AtomicBool::new(false)),
+            source: "test".into(),
+            handle: None,
+        };
+        let gone: IpAddr = "1.2.3.4".parse().expect("test address");
+        let kept: IpAddr = "5.6.7.8".parse().expect("test address");
+
+        assert_eq!(monitor.clear_source(gone), 2, "one row per port is dropped");
+
+        let rows = monitor.rows();
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].src, kept);
+        assert_eq!(monitor.clear_source(gone), 0, "the address is already gone");
+
+        record(&table, &line("1.2.3.4", 22, "TCP"));
+        let revived = monitor
+            .rows()
+            .into_iter()
+            .find(|row| row.src == gone)
+            .expect("the address should come back");
+        assert_eq!(revived.count, 1, "counting restarts after a clear_source");
     }
 
     #[test]

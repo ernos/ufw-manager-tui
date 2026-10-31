@@ -1,5 +1,10 @@
 
+
 # CHANGELOG
+
+## Version 0.1.7
+
+- On the Activities Page `c`did not clear the list of events.`c` now empties the log monitor as well, so the rows no longer reappear on the next tick; new traffic still shows up again.
 
 ## Version 0.1.5
 
