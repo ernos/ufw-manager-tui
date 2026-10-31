@@ -1846,7 +1846,7 @@ impl App {
         let Some(rule) = self.selected_rule() else {
             return;
         };
-        let change = match command::change_delete(&rule) {
+        let change = match command::change_delete(&rule, self.state.rules.len()) {
             Ok(change) => change,
             Err(error) => {
                 self.set_status(StatusLevel::Error, error);
@@ -1918,7 +1918,7 @@ impl App {
             self.set_status(StatusLevel::Info, "already at the top");
             return;
         }
-        match command::change_move(&rule, target) {
+        match command::change_move(&rule, target, self.state.rules.len()) {
             Ok(change) => {
                 let pending = PendingChange::new(ChangeKind::MoveRule, change.description.clone());
                 self.submit(change, pending);
@@ -2647,7 +2647,8 @@ impl App {
                     self.wizard.error = Some("that rule no longer exists".into());
                     return;
                 };
-                let change: Change = match command::change_edit(&rule, &draft) {
+                let rule_count = self.state.rules.len();
+                let change: Change = match command::change_edit(&rule, &draft, rule_count) {
                     Ok(change) => change,
                     Err(error) => {
                         self.wizard.error = Some(error);

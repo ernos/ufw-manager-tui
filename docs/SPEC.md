@@ -276,6 +276,12 @@ single keypress.
 - `x` opens a small reorder modal (`u`=up, `d`=down, `p`=move to top) implemented with `ufw insert N`, with
   an explicit note that reordering changes which rule wins.
 
+Editing, moving and undoing a rule all run as `delete N` followed by a re-add. `ufw insert N` is only
+accepted when `N` is a position the list already has, so the re-add is emitted as a plain append whenever the
+rule belongs at — or past — the end of the shortened list. Without that guard, editing the last rule failed,
+and a one-rule list failed outright: the delete left nothing behind, so even `insert 1` was rejected with
+`Invalid position '1'`.
+
 ### 6.3 Add — guided wizard
 
 The wizard occupies the whole **Add tab** rather than a modal. A modal was the original plan, but the

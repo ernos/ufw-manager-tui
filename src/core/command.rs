@@ -321,6 +321,21 @@ pub fn change_add(draft: &RuleDraft) -> Result<Change, String> {
 }
 
 /**
+ * Returns how many rules `ufw` lists once the delete step of a change has run.
+ *
+ * # Arguments
+ *
+ * * `existing` (`usize`) - The number of rules listed before the change starts.
+ *
+ * # Returns
+ *
+ * `usize` - One less than `existing`, saturating at zero.
+ */
+fn remaining_after_delete(existing: usize) -> usize {
+    existing.saturating_sub(1)
+}
+
+/**
  * Builds the change that deletes an existing rule.
  *
  * The inverse re-inserts the rule at its original position.
@@ -328,13 +343,14 @@ pub fn change_add(draft: &RuleDraft) -> Result<Change, String> {
  * # Arguments
  *
  * * `rule` (`&Rule`) - The rule to delete.
+ * * `existing` (`usize`) - The number of rules currently listed, including this one.
  *
  * # Returns
  *
  * `Result<Change, String>` - The change on success, or an error when the rule cannot be
  * rebuilt as an insert command.
  */
-pub fn change_delete(rule: &Rule) -> Result<Change, String> {
+pub fn change_delete(rule: &Rule, existing: usize) -> Result<Change, String> {
     let draft = rule.to_draft();
     Ok(Change {
         description: format!(
@@ -343,7 +359,11 @@ pub fn change_delete(rule: &Rule) -> Result<Change, String> {
             crate::core::explain::explain_rule(rule)
         ),
         steps: vec![delete_by_number(rule.number)],
-        inverse: vec![insert_rule(&draft, rule.number-1)?],
+        inverse: vec![insert_rule(
+            &draft,
+            rule.number,
+            remaining_after_delete(existing),
+        )?],
     })
 }
 
@@ -357,22 +377,56 @@ pub fn change_delete(rule: &Rule) -> Result<Change, String> {
  *
  * * `old` (`&Rule`) - The rule currently in the firewall.
  * * `new` (`&RuleDraft`) - The replacement rule.
+ * * `existing` (`usize`) - The number of rules currently listed, including `old`.
  *
  * # Returns
  *
  * `Result<Change, String>` - The change on success, or an error when either insert
  * command cannot be built.
  */
-pub fn change_edit(old: &Rule, new: &RuleDraft) -> Result<Change, String> {
+pub fn change_edit(old: &Rule, new: &RuleDraft, existing: usize) -> Result<Change, String> {
     let old_draft = old.to_draft();
     let number = old.number;
+    let after_delete = remaining_after_delete(existing);
     Ok(Change {
         description: format!(
             "Edit rule #{number}: {}",
             crate::core::explain::explain_draft(new)
         ),
-        steps: vec![delete_by_number(number), insert_rule(new, number)?],
-        inverse: vec![delete_by_number(number), insert_rule(&old_draft, number)?],
+        steps: vec![
+            delete_by_number(number),
+            insert_rule(new, number, after_delete)?,
+        ],
+        inverse: vec![
+            delete_by_number(number),
+            insert_rule(&old_draft, number, after_delete)?,
+        ],
+    })
+}
+
+/**
+ * Builds the change that copies an existing rule to the slot right after it.
+ *
+ * # Arguments
+ *
+ * * `rule` (`&Rule`) - The rule to copy.
+ * * `existing` (`usize`) - The number of rules currently listed.
+ *
+ * # Returns
+ *
+ * * `Result<Change, String>` - The change on success, or an error when the insert command cannot be built.
+ */
+pub fn change_duplicate(rule: &Rule, existing: usize) -> Result<Change, String> {
+    let draft = rule.to_draft();
+    let copy = rule.number + 1;
+
+    Ok(Change {
+        description: format!("Duplicate rule #{} below it", rule.number),
+        steps: vec![
+            insert_rule(&draft, copy, existing)?,
+        ],
+        // Deleting by specification survives renumbering, so it is the safer inverse.
+        inverse: vec![delete_by_number(copy)],
     })
 }
 
@@ -383,23 +437,25 @@ pub fn change_edit(old: &Rule, new: &RuleDraft) -> Result<Change, String> {
  *
  * * `rule` (`&Rule`) - The rule to move.
  * * `target_position` (`u32`) - The 1-based position the rule should end up at.
+ * * `existing` (`usize`) - The number of rules currently listed, including `rule`.
  *
  * # Returns
  *
  * `Result<Change, String>` - The change on success, or an error when the insert command
  * cannot be built.
  */
-pub fn change_move(rule: &Rule, target_position: u32) -> Result<Change, String> {
+pub fn change_move(rule: &Rule, target_position: u32, existing: usize) -> Result<Change, String> {
     let draft = rule.to_draft();
+    let after_delete = remaining_after_delete(existing);
     Ok(Change {
         description: format!("Move rule #{} to position {target_position}", rule.number),
         steps: vec![
             delete_by_number(rule.number),
-            insert_rule(&draft, target_position)?,
+            insert_rule(&draft, target_position, after_delete)?,
         ],
         inverse: vec![
             delete_by_number(target_position),
-            insert_rule(&draft, rule.number)?,
+            insert_rule(&draft, rule.number, after_delete)?,
         ],
     })
 }
@@ -413,15 +469,16 @@ pub fn change_move(rule: &Rule, target_position: u32) -> Result<Change, String> 
  *
  * * `rule` (`&Rule`) - The rule whose comment is changed.
  * * `note` (`Option<&str>`) - The new comment, or `None` to remove it.
+ * * `existing` (`usize`) - The number of rules currently listed, including `rule`.
  *
  * # Returns
  *
  * `Result<Change, String>` - The edit change produced by [`change_edit`].
  */
-pub fn change_comment(rule: &Rule, note: Option<&str>) -> Result<Change, String> {
+pub fn change_comment(rule: &Rule, note: Option<&str>, existing: usize) -> Result<Change, String> {
     let mut updated = rule.to_draft();
     updated.comment = note.map(str::to_string).filter(|n| !n.trim().is_empty());
-    change_edit(rule, &updated)
+    change_edit(rule, &updated, existing)
 }
 
 /**
@@ -545,23 +602,39 @@ pub fn delete_by_number(number: u32) -> Vec<String> {
 }
 
 /**
- * Builds the argument vector that inserts a rule at a given position.
+ * Builds the argument vector that places a rule at a given position.
+ *
+ * `ufw insert NUM` is only accepted when `NUM` is one of the positions the list
+ * already has; `ufw` answers `Invalid position 'NUM'` for anything past the end.
+ * A position at or beyond the end is therefore emitted as a plain append, which
+ * is exactly where that position points. This is what keeps editing, moving and
+ * undoing the last rule working, and in particular the one-rule case, where the
+ * delete leaves the list empty and even `insert 1` is rejected.
  *
  * # Arguments
  *
  * * `draft` (`&RuleDraft`) - The rule to insert.
  * * `position` (`u32`) - The 1-based position; values below 1 are clamped to 1.
+ * * `existing` (`usize`) - How many rules the list holds when this command runs.
  *
  * # Returns
  *
- * `Result<Vec<String>, String>` - The `insert <position> ...` arguments, or the
- * validation error from [`rule_args`].
+ * `Result<Vec<String>, String>` - The `insert <position> ...` arguments, the bare rule
+ * arguments when the rule is appended, or the validation error from [`rule_args`].
  */
-pub fn insert_rule(draft: &RuleDraft, position: u32) -> Result<Vec<String>, String> {
+pub fn insert_rule(
+    draft: &RuleDraft,
+    position: u32,
+    existing: usize,
+) -> Result<Vec<String>, String> {
     let position = position.max(1);
-    let mut args = vec!["insert".to_string(), position.to_string()];
-    args.extend(rule_args(draft, true)?);
-    Ok(args)
+    let args = rule_args(draft, true)?;
+    if position as usize > existing {
+        return Ok(args);
+    }
+    let mut with_position = vec!["insert".to_string(), position.to_string()];
+    with_position.extend(args);
+    Ok(with_position)
 }
 
 /**
@@ -844,11 +917,43 @@ mod tests {
             v6: false,
             route: false,
         };
-        let change = change_delete(&rule).unwrap();
+        let change = change_delete(&rule, 8).unwrap();
         assert_eq!(change.steps, vec![argv(&["--force", "delete", "4"])]);
         assert_eq!(change.inverse[0][0], "insert");
-        assert_eq!(change.inverse[0][1], "3");
+        assert_eq!(change.inverse[0][1], "4");
         assert!(change.inverse[0].contains(&"SSH".to_string()));
+    }
+
+    #[test]
+    /**
+     * Verifies that undoing the delete of the only rule appends instead of
+     * asking for position 1, which `ufw` rejects on an empty list.
+     *
+     * # Arguments
+     *
+     * This function takes no arguments.
+     *
+     * # Returns
+     *
+     * This function returns no value.
+     */
+    fn undoing_the_delete_of_the_only_rule_appends() {
+        let rule = Rule {
+            number: 1,
+            action: Action::Allow,
+            direction: Direction::In,
+            interface_in: None,
+            interface_out: None,
+            protocol: Protocol::Tcp,
+            from: Endpoint::any(),
+            to: Endpoint::port(22),
+            log: LogMode::None,
+            comment: None,
+            v6: false,
+            route: false,
+        };
+        let change = change_delete(&rule, 1).unwrap();
+        assert_eq!(change.inverse[0], argv(&["allow", "22/tcp"]));
     }
 
     #[test]
@@ -879,12 +984,82 @@ mod tests {
             route: false,
         };
         let new = RuleDraft::allow_port(Protocol::Tcp, 2222);
-        let change = change_edit(&rule, &new).unwrap();
+        let change = change_edit(&rule, &new, 4).unwrap();
         assert_eq!(change.steps.len(), 2);
         assert_eq!(change.steps[0], argv(&["--force", "delete", "2"]));
+        assert_eq!(change.steps[1][0], "insert");
+        assert_eq!(change.steps[1][1], "2");
         assert!(change.steps[1].contains(&"2222/tcp".to_string()));
         assert_eq!(change.inverse.len(), 2);
         assert!(change.inverse[1].contains(&"22/tcp".to_string()));
+    }
+
+    #[test]
+    /**
+     * Verifies that editing the only rule appends, because the delete leaves an
+     * empty list where `insert 1` is an invalid position.
+     *
+     * # Arguments
+     *
+     * This function takes no arguments.
+     *
+     * # Returns
+     *
+     * This function returns no value.
+     */
+    fn editing_the_only_rule_appends_instead_of_inserting() {
+        let rule = Rule {
+            number: 1,
+            action: Action::Allow,
+            direction: Direction::In,
+            interface_in: None,
+            interface_out: None,
+            protocol: Protocol::Tcp,
+            from: Endpoint::any(),
+            to: Endpoint::port(22),
+            log: LogMode::None,
+            comment: None,
+            v6: false,
+            route: false,
+        };
+        let new = RuleDraft::allow_port(Protocol::Tcp, 2222);
+        let change = change_edit(&rule, &new, 1).unwrap();
+        assert_eq!(change.steps[1], argv(&["allow", "2222/tcp"]));
+        assert_eq!(change.inverse[1], argv(&["allow", "22/tcp"]));
+    }
+
+    #[test]
+    /**
+     * Verifies that editing the last of several rules appends, since no position
+     * past the shortened list exists.
+     *
+     * # Arguments
+     *
+     * This function takes no arguments.
+     *
+     * # Returns
+     *
+     * This function returns no value.
+     */
+    fn editing_the_last_rule_appends() {
+        let rule = Rule {
+            number: 3,
+            action: Action::Allow,
+            direction: Direction::In,
+            interface_in: None,
+            interface_out: None,
+            protocol: Protocol::Tcp,
+            from: Endpoint::any(),
+            to: Endpoint::port(22),
+            log: LogMode::None,
+            comment: None,
+            v6: false,
+            route: false,
+        };
+        let new = RuleDraft::allow_port(Protocol::Tcp, 2222);
+        let change = change_edit(&rule, &new, 3).unwrap();
+        assert_eq!(change.steps[1], argv(&["allow", "2222/tcp"]));
+        assert_eq!(change.inverse[1], argv(&["allow", "22/tcp"]));
     }
 
     #[test]
@@ -947,20 +1122,23 @@ mod tests {
     fn reset_is_destructive() {
         assert!(is_destructive(&change_reset()));
         assert!(is_destructive(
-            &change_delete(&Rule {
-                number: 1,
-                action: Action::Allow,
-                direction: Direction::In,
-                interface_in: None,
-                interface_out: None,
-                protocol: Protocol::Tcp,
-                from: Endpoint::any(),
-                to: Endpoint::port(22),
-                log: LogMode::None,
-                comment: None,
-                v6: false,
-                route: false,
-            })
+            &change_delete(
+                &Rule {
+                    number: 1,
+                    action: Action::Allow,
+                    direction: Direction::In,
+                    interface_in: None,
+                    interface_out: None,
+                    protocol: Protocol::Tcp,
+                    from: Endpoint::any(),
+                    to: Endpoint::port(22),
+                    log: LogMode::None,
+                    comment: None,
+                    v6: false,
+                    route: false,
+                },
+                1
+            )
             .unwrap()
         ));
         assert!(!is_destructive(
@@ -995,11 +1173,44 @@ mod tests {
             v6: false,
             route: false,
         };
-        let change = change_move(&rule, 1).unwrap();
+        let change = change_move(&rule, 1, 8).unwrap();
         assert_eq!(change.steps[0], argv(&["--force", "delete", "5"]));
         assert_eq!(change.steps[1][0], "insert");
         assert_eq!(change.steps[1][1], "1");
         assert_eq!(change.inverse[0], argv(&["--force", "delete", "1"]));
+    }
+
+    #[test]
+    /**
+     * Verifies that moving a rule to the end appends, because `ufw` rejects a
+     * position one past the shortened list.
+     *
+     * # Arguments
+     *
+     * This function takes no arguments.
+     *
+     * # Returns
+     *
+     * This function returns no value.
+     */
+    fn moving_a_rule_to_the_end_appends() {
+        let rule = Rule {
+            number: 1,
+            action: Action::Allow,
+            direction: Direction::In,
+            interface_in: None,
+            interface_out: None,
+            protocol: Protocol::Tcp,
+            from: Endpoint::any(),
+            to: Endpoint::port(22),
+            log: LogMode::None,
+            comment: None,
+            v6: false,
+            route: false,
+        };
+        let change = change_move(&rule, 2, 2).unwrap();
+        assert_eq!(change.steps[0], argv(&["--force", "delete", "1"]));
+        assert_eq!(change.steps[1], argv(&["allow", "22/tcp"]));
     }
 
     #[test]

@@ -2,7 +2,7 @@
 name = "ufw-manager-tui"
 repository = "https://github.com/ernos/ufw-manager-tui"
 homepage = "https://www.yourdev.net/ufw-manager-tui"
-version = "0.1.7"
+version = "0.1.8"
 edition = "2021"
 rust-version = "1.85"
 description = "A friendly terminal UI for managing ufw firewall rules without getting locked out from your own system.\n\nVery easy to use and intuitive, even for beginners with very basic knowledge of networking and firewalls. \n\nFeatures:\n - wizard-like guidance for creating rules and makes risk assesment of each of them.\n - A list 'What to fix' is provided to help users identify potential issues and it can auto fix some of them (rate limiting etc).\n - Risk assesment of your current firewall configuration(Critical, High, Medium, Low).\n - Creating, Editing, Moving and Deleting rules with ease.\n - Presets for common configurations.\n\nTabs\n - Home\n - Rules\n - Add\n - Test\n - Activity\n - Presets\n - Help\n - Settings"

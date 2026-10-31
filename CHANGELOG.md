@@ -2,8 +2,13 @@
 
 # CHANGELOG
 
+## Version 0.1.8
+
+- Fixed the bug which incorrectly deleted rules if it was the only one in the list. It incorrectly used `ufw insert 1` which generated an error due to bad code
+
 ## Version 0.1.7
 
+- Editing, moving or undoing a rule no longer fails with `ERROR: Invalid position '1'` when that rule sits at the end of the list. `ufw` rejects `insert N` unless position `N` already exists, and the delete step of an edit leaves one position fewer, so the re-add is now emitted as a plain append when the rule belongs at (or past) the end. Editing the only rule in the list — which previously failed outright — now works.
 - On the Activities Page `c`did not clear the list of events.`c` now empties the log monitor as well, so the rows no longer reappear on the next tick; new traffic still shows up again.
 
 ## Version 0.1.5

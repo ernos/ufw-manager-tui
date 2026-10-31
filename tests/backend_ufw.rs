@@ -239,7 +239,7 @@ fn deleting_a_rule_uses_the_number_and_never_prompts() {
     let backend = UfwCli::for_testing(script.to_string_lossy().to_string());
 
     let state = backend.read_state().expect("state");
-    let change = command::change_delete(&state.rules[2]).expect("change");
+    let change = command::change_delete(&state.rules[2], state.rules.len()).expect("change");
     for step in &change.steps {
         backend.run(step).expect("delete must succeed");
     }
