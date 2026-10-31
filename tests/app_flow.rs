@@ -8,7 +8,9 @@ use std::time::{Duration, Instant};
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
-use ufw_manager::app::{App, AppOptions, Tab, WizardStep};
+use ufw_manager::app::{
+    App, AppOptions, Tab, WizardStep, SETTINGS_DEFAULT_START, SETTINGS_SAVE_ROW,
+};
 use ufw_manager::backend::logs::BlockMonitor;
 use ufw_manager::backend::mock::MockBackend;
 use ufw_manager::config::Config;
@@ -39,8 +41,45 @@ fn app() -> App {
             reconcile_seconds: 0,
             show_counters: true,
             confirm_before_apply: false,
+            no_color: false,
             config: Config::default(),
             config_path: None,
+        },
+    )
+}
+
+/**
+ * Builds an [`App`] whose settings come from a config file, as the real binary
+ * does at start-up.
+ *
+ * # Arguments
+ *
+ * * `path` (`Option<&Path>`) - The config file to load and to save back to;
+ *   `None` keeps everything in memory only.
+ *
+ * # Returns
+ *
+ * `App` - A freshly constructed application in its initial state.
+ */
+fn app_with_config_path(path: Option<&Path>) -> App {
+    let config = match path {
+        Some(path) => Config::load(Some(path)),
+        None => Config::default(),
+    };
+    App::new(
+        Box::new(MockBackend::new()),
+        AppOptions {
+            journal_path: None,
+            parked_path: None,
+            yes: false,
+            readonly: config.readonly,
+            theme: Theme::new(&config.theme, false),
+            reconcile_seconds: config.reconcile_seconds,
+            show_counters: config.show_counters,
+            confirm_before_apply: config.confirm_before_apply,
+            no_color: false,
+            config,
+            config_path: path.map(|path| path.to_path_buf()),
         },
     )
 }
@@ -514,6 +553,7 @@ fn commented_out_rules_survive_a_restart() {
         reconcile_seconds: 0,
         show_counters: true,
         confirm_before_apply: false,
+        no_color: false,
         config: Config::default(),
         config_path: None,
     };
@@ -758,6 +798,7 @@ fn read_only_mode_refuses_to_write() {
             reconcile_seconds: 0,
             show_counters: true,
             confirm_before_apply: false,
+            no_color: false,
             config: Config::default(),
             config_path: None,
         },
@@ -1123,6 +1164,7 @@ fn app_with_confirmation() -> App {
             reconcile_seconds: 0,
             show_counters: true,
             confirm_before_apply: true,
+            no_color: false,
             config: Config::default(),
             config_path: None,
         },
@@ -1358,6 +1400,7 @@ fn x_asks_for_privileges_when_it_can_and_explains_when_it_cannot() {
             reconcile_seconds: 0,
             show_counters: true,
             confirm_before_apply: false,
+            no_color: false,
             config: Config::default(),
             config_path: None,
         },
@@ -1383,6 +1426,7 @@ fn x_asks_for_privileges_when_it_can_and_explains_when_it_cannot() {
             reconcile_seconds: 0,
             show_counters: true,
             confirm_before_apply: false,
+            no_color: false,
             config: Config::default(),
             config_path: None,
         },
@@ -2024,8 +2068,8 @@ fn settings_tab_toggles_skip_wizard() {
     assert_eq!(app.tab, Tab::Settings);
     assert!(!app.skip_wizard);
 
-    // Move to the last row (the checkbox) and press Space.
-    for _ in 0..7 {
+    // Row 6 is the skip-wizard checkbox.
+    for _ in 0..6 {
         press(&mut app, KeyCode::Down);
     }
     press(&mut app, KeyCode::Char(' '));
@@ -2053,11 +2097,14 @@ fn settings_tab_toggles_skip_wizard() {
 fn settings_defaults_are_used_for_new_rules() {
     let mut app = app();
     app.tab = Tab::Settings;
-    // Row 0 is Action; Enter cycles allow -> deny.
+    // Row 7 is the default Action; Enter cycles allow -> deny.
+    for _ in 0..SETTINGS_DEFAULT_START {
+        press(&mut app, KeyCode::Down);
+    }
     press(&mut app, KeyCode::Enter);
     assert_eq!(app.config.defaults.action, "deny");
 
-    // Row 1 is Direction; Enter cycles in -> out.
+    // Row 8 is Direction; Enter cycles in -> out.
     press(&mut app, KeyCode::Down);
     press(&mut app, KeyCode::Enter);
     assert_eq!(app.config.defaults.direction, "out");
@@ -2114,9 +2161,10 @@ fn skip_wizard_opens_the_advanced_step() {
 fn settings_text_input_commits_the_value() {
     let mut app = app();
     app.tab = Tab::Settings;
-    // Row 2 is Interface; Enter opens the text input.
-    press(&mut app, KeyCode::Down);
-    press(&mut app, KeyCode::Down);
+    // Row 9 is Interface; Enter opens the text input.
+    for _ in 0..SETTINGS_DEFAULT_START + 2 {
+        press(&mut app, KeyCode::Down);
+    }
     press(&mut app, KeyCode::Enter);
     assert!(
         app.settings_input.is_some(),
@@ -2137,6 +2185,213 @@ fn settings_text_input_commits_the_value() {
     press(&mut app, KeyCode::Enter);
     assert!(app.settings_input.is_none());
     assert_eq!(app.config.defaults.interface, "q1");
+}
+
+#[test]
+/**
+ * Verifies that changing a setting only touches memory until the Save Settings
+ * row is confirmed, and that the file then holds the change.
+ *
+ * # Arguments
+ *
+ * This function takes no arguments.
+ *
+ * # Returns
+ *
+ * `()` - This function returns no value.
+ *
+ * # Panics
+ *
+ * Panics if the file is written early or does not hold the new value.
+ */
+fn settings_are_written_only_when_the_save_row_is_confirmed() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("config.toml");
+    let mut app = app_with_config_path(Some(&path));
+    app.tab = Tab::Settings;
+
+    // Row 0 is Theme; Enter cycles dark -> light.
+    press(&mut app, KeyCode::Enter);
+    assert_eq!(app.config.theme, "light");
+    assert!(!path.exists(), "nothing should be written before saving");
+
+    // The last row is the Save Settings button.
+    for _ in 0..SETTINGS_SAVE_ROW {
+        press(&mut app, KeyCode::Down);
+    }
+    press(&mut app, KeyCode::Enter);
+    assert!(!app.settings_dirty);
+    let saved = Config::load(Some(&path));
+    assert_eq!(saved.theme, "light");
+}
+
+#[test]
+/**
+ * Verifies that the `S` shortcut writes every changed setting, including the
+ * numeric and rule-default rows.
+ *
+ * # Arguments
+ *
+ * This function takes no arguments.
+ *
+ * # Returns
+ *
+ * `()` - This function returns no value.
+ *
+ * # Panics
+ *
+ * Panics if any changed setting is missing from the file.
+ */
+fn the_save_shortcut_writes_every_changed_setting() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("config.toml");
+    let mut app = app_with_config_path(Some(&path));
+    app.tab = Tab::Settings;
+
+    // Row 1 is Confirm before apply; Space flips it.
+    press(&mut app, KeyCode::Down);
+    press(&mut app, KeyCode::Char(' '));
+    assert!(!app.confirm_before_apply);
+
+    // Row 2 is Counters refresh; Enter opens the text box, which is replaced.
+    press(&mut app, KeyCode::Down);
+    press(&mut app, KeyCode::Enter);
+    press(&mut app, KeyCode::Backspace);
+    press(&mut app, KeyCode::Backspace);
+    press(&mut app, KeyCode::Char('9'));
+    press(&mut app, KeyCode::Enter);
+    assert_eq!(app.config.counters_refresh_secs, 9);
+
+    press(&mut app, KeyCode::Char('S'));
+    let saved = Config::load(Some(&path));
+    assert!(!saved.confirm_before_apply);
+    assert_eq!(saved.counters_refresh_secs, 9);
+}
+
+#[test]
+/**
+ * Verifies that a non-numeric value for a seconds setting is rejected instead of
+ * being written to the file.
+ *
+ * # Arguments
+ *
+ * This function takes no arguments.
+ *
+ * # Returns
+ *
+ * `()` - This function returns no value.
+ *
+ * # Panics
+ *
+ * Panics if the previous value is lost.
+ */
+fn a_non_numeric_seconds_value_is_rejected() {
+    let mut app = app();
+    app.tab = Tab::Settings;
+    let before = app.config.counters_refresh_secs;
+
+    // Row 2 is Counters refresh.
+    press(&mut app, KeyCode::Down);
+    press(&mut app, KeyCode::Down);
+    press(&mut app, KeyCode::Enter);
+    for _ in 0..before.to_string().len() {
+        press(&mut app, KeyCode::Backspace);
+    }
+    press(&mut app, KeyCode::Char('x'));
+    press(&mut app, KeyCode::Enter);
+
+    assert_eq!(app.config.counters_refresh_secs, before);
+}
+
+#[test]
+/**
+ * Verifies that the theme row rebuilds the live palette, not only the config.
+ *
+ * # Arguments
+ *
+ * This function takes no arguments.
+ *
+ * # Returns
+ *
+ * `()` - This function returns no value.
+ *
+ * # Panics
+ *
+ * Panics if the palette on screen does not follow the setting.
+ */
+fn the_theme_row_changes_the_palette_immediately() {
+    let mut app = app();
+    app.tab = Tab::Settings;
+    press(&mut app, KeyCode::Enter);
+    assert_eq!(app.theme.palette.name(), "light");
+    press(&mut app, KeyCode::Left);
+    assert_eq!(app.theme.palette.name(), "dark");
+}
+
+#[test]
+/**
+ * Verifies that a config file written by an earlier session is loaded on
+ * start-up and used for new rules.
+ *
+ * # Arguments
+ *
+ * This function takes no arguments.
+ *
+ * # Returns
+ *
+ * `()` - This function returns no value.
+ *
+ * # Panics
+ *
+ * Panics if any saved setting is ignored.
+ */
+fn the_config_file_is_loaded_on_startup() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("config.toml");
+    std::fs::write(
+        &path,
+        r#"
+theme = "light"
+confirm_before_apply = false
+counters_refresh_secs = 9
+log_source = "journal"
+reconcile_seconds = 0
+readonly = false
+skip_wizard = true
+
+[defaults]
+action = "limit"
+direction = "out"
+interface = "wg0"
+protocol = "udp"
+from_addr = "192.168.1.0/24"
+from_port = "1024:65535"
+to_addr = "10.0.0.0/8"
+to_port = "53"
+logging = "log-all"
+"#,
+    )
+    .unwrap();
+
+    let mut app = app_with_config_path(Some(&path));
+    assert_eq!(app.config.theme, "light");
+    assert!(!app.confirm_before_apply);
+    assert_eq!(app.config.counters_refresh_secs, 9);
+    assert_eq!(app.config.log_source, "journal");
+    assert_eq!(app.reconcile_seconds, 0);
+    assert!(app.skip_wizard);
+
+    app.start_add();
+    let draft = &app.wizard.draft;
+    assert_eq!(draft.action.ufw(), "limit");
+    assert_eq!(draft.direction.label(), "OUT");
+    assert_eq!(draft.interface_in.as_deref(), Some("wg0"));
+    assert_eq!(draft.protocol.to_string(), "udp");
+    assert_eq!(draft.from_addr.as_deref(), Some("192.168.1.0/24"));
+    assert_eq!(draft.from_port.to_string(), "1024:65535");
+    assert_eq!(draft.to_addr.as_deref(), Some("10.0.0.0/8"));
+    assert_eq!(draft.to_port.single_port(), Some(53));
+    assert_eq!(draft.log.label(), "log-all");
 }
 
 /**

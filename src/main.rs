@@ -60,7 +60,8 @@ fn main() -> Result<()> {
         std::env::set_var("UFW_MANAGER_UFW", path);
     }
 
-    let config = Config::load(cli.config.as_deref());
+    let config_path = Config::resolved_path(cli.config.as_deref());
+    let config = Config::load(config_path.as_deref());
     let theme = Theme::new(cli.theme.as_deref().unwrap_or(&config.theme), cli.no_color)
         .with_ascii(cli.ascii || config.ascii_fallback);
 
@@ -89,8 +90,9 @@ fn main() -> Result<()> {
             reconcile_seconds: config.reconcile_seconds,
             show_counters: config.show_counters,
             confirm_before_apply: config.confirm_before_apply,
+            no_color: cli.no_color,
             config,
-            config_path: cli.config.clone(),
+            config_path,
         },
     );
 

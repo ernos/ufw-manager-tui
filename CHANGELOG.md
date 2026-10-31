@@ -4,7 +4,8 @@
 
 ## Index
 
-- [Unreleased](#unreleased)
+- [Version 0.2.3](#version-023)
+- [Version 0.2.2](#version-022)
 - [Version 0.1.8](#version-018)
 - [Version 0.1.7](#version-017)
 - [Version 0.1.5](#version-015)
@@ -12,6 +13,20 @@
 - [Version 0.1.3](#version-013)
 - [Version 0.1.1](#version-011)
 - [Version 0.1.0](#version-010)
+
+## Version 0.2.3
+
+- The Settings tab now has a **Save Settings** row (and `S`) that writes every setting to
+  `~/.config/ufw-manager-tui/config.toml`, or to the file named by `--config`. Before, the file was only
+  written when the program was started with `--config`, so changes made from the tab were lost on exit.
+  Rows apply to the running session immediately; the footer says when there are unsaved changes.
+- The Settings tab covers the general preferences as well as the rule defaults: theme, confirm before apply,
+  counters refresh, log source, reconcile seconds, read-only and skip wizard, then action, direction,
+  interface, protocol, from address/port, to address/port and logging.
+- `[defaults]` gained `from_port` and `to_port` (port, range, list or application profile), and the default
+  logging mode for new rules is now `log-all`.
+- Settings are loaded from the config file at start-up whether or not `--config` was given, so a saved
+  theme, defaults or read-only flag survives a restart.
 
 ## Version 0.2.2
 

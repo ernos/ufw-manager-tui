@@ -205,10 +205,27 @@ theme = "dark"                # dark | light | 16color | mono
 confirm_before_apply = true
 show_counters = true
 counters_refresh_secs = 5
+log_source = "auto"           # auto | file | journal
 reconcile_seconds = 60        # 0 disables the auto-revert watchdog
 ascii_fallback = false
 readonly = false
+skip_wizard = false
+
+[defaults]                    # pre-filled values for new rules
+action = "allow"
+direction = "in"
+interface = ""
+protocol = "any"
+from_addr = ""
+from_port = ""
+to_addr = ""
+to_port = ""
+logging = "log-all"
 ```
+
+Everything above is also editable on the **Settings** tab (`8`). Changes there apply immediately and are
+written to this file when you select **Save Settings** and press `ENTER`, or press `S`. Without `--config`
+the file is the default path shown above, so saving always persists.
 
 The undo journal lives in `~/.local/state/ufw-manager-tui/journal.json`, and rules commented out with `s`
 are kept in `~/.local/state/ufw-manager-tui/disabled-rules.json` so they can be put back where they were.

@@ -724,6 +724,7 @@ pub(crate) mod tests {
                 reconcile_seconds: 0,
                 show_counters: true,
                 confirm_before_apply: false,
+                no_color: false,
                 config: crate::config::Config::default(),
                 config_path: None,
             },

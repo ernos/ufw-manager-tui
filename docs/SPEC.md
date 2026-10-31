@@ -488,30 +488,53 @@ Each preset declares its preconditions and is hidden or annotated when not appli
 
 ### 6.8 Settings
 
-The Settings tab (digit `8`) configures the defaults applied to **new** rules and whether the guided
-wizard is skipped. Every change is written to `config.toml` immediately.
+The Settings tab (digit `8`) holds the general preferences and the defaults applied to **new** rules.
+Changes take effect in the running session at once; the file is written when the user selects
+**Save Settings** (or presses `S`).
 
 ```
-  ┌─ DEFAULTS FOR NEW RULES ─────────────────────────────────────────────┐
-  │  ▸ Action            allow                                            │
-  │    Direction         in                                               │
-  │    Interface         any                                              │
-  │    Protocol          any                                              │
-  │    From address      any                                              │
-  │    To address        any                                              │
-  │    Logging           off                                              │
-  │    [ ] Skip wizard (start new rules on Advanced)                      │
+  ┌─ settings ────────────────────────────────────────────────────────────┐
+  │  General Settings                                                     │
+  │    Theme                              dark                            │
+  │    [ ] Confirm before apply                                           │
+  │    Counters refresh (seconds)         5                               │
+  │    Log source                         auto                            │
+  │    Reconcile (seconds)                60                              │
+  │    [ ] Read-only                                                      │
+  │    [ ] Skip wizard (new rules start on Advanced)                      │
+  │                                                                       │
+  │  Rule defaults                                                        │
+  │    Action                             allow                           │
+  │    Direction                          in                              │
+  │    Interface                          any                             │
+  │    Protocol                           any                             │
+  │    From address                       any                             │
+  │    From port                          any                             │
+  │    To address                         any                             │
+  │    To port                            any                             │
+  │    Logging                            log-all                         │
+  │                                                                       │
+  │    [ Save Settings ]   save settings to ~/.config/ufw-manager-tui/config.toml
   └───────────────────────────────────────────────────────────────────────┘
-  Changes are saved to config.toml immediately.
-  ENTER / ← → change    SPACE toggle checkbox    ESC cancel
+  ● Unsaved changes — nothing is written until you save.
+  ENTER / ← → change    SPACE toggle    S save settings
 ```
 
-- **Toggle rows** (Action, Direction, Protocol, Logging) cycle to the next value on `ENTER`, `←` or `→`.
-- **Text rows** (Interface, From address, To address) open a text input on `ENTER`; empty or `any` input
-  means "any".
-- **Skip wizard** (`SPACE`) makes `a` on the Rules tab open the wizard directly on the Advanced step,
-  pre-filled from these defaults. Editing (`e`) an existing rule also opens on the Advanced step when
-  this is enabled.
+- **General settings**: `Theme` (dark, light, 16color, mono), `Confirm before apply`, `Counters refresh`,
+  `Log source` (auto, file, journal), `Reconcile` seconds (`0` disables the watchdog), `Read-only` and
+  `Skip wizard`.
+- **Rule defaults**: action, direction, incoming interface, protocol, source address and port, destination
+  address and port, and logging. Empty addresses, ports and the interface mean "any".
+- **Cycling rows** (theme, log source, action, direction, protocol, logging) advance on `ENTER`, `→` and `l`,
+  and go back on `←` and `h`.
+- **Checkbox rows** (confirm, read-only, skip wizard) flip on `ENTER` or `SPACE`.
+- **Text rows** (counters, reconcile, interface, addresses, ports) open a text input on `ENTER`; empty or
+  `any` input means "any". The two numeric rows reject anything that is not a whole number.
+- **Save Settings** (`ENTER` on the row, or `S` anywhere) writes every setting to
+  `<config_dir>/ufw-manager-tui/config.toml`, or to the file named by `--config`. Nothing is written before
+  that, so a mis-click cannot change the next session.
+- **Skip wizard** makes `a` on the Rules tab open the wizard directly on the Advanced step, pre-filled from
+  these defaults. Editing (`e`) an existing rule also opens on the Advanced step when this is enabled.
 - Editing or duplicating an existing rule always uses that rule's own values, never these defaults.
 
 ## 7. Rule model
@@ -897,8 +920,22 @@ log_source = "auto"           # auto | ufw.log | journal
 reconcile_seconds = 60        # watchdog delay, 0 disables
 default_confirm_within = true
 ascii_fallback = false
-keymap = "default"
+skip_wizard = false
+
+[defaults]
+action = "allow"
+direction = "in"
+interface = ""
+protocol = "any"
+from_addr = ""
+from_port = ""
+to_addr = ""
+to_port = ""
+logging = "log-all"
 ```
+
+The Settings tab writes this same file; without `--config` that is the default path, so saving always
+persists.
 
 `~/.local/state/ufw-manager-tui/journal.json` — undo stack + change history (session and cross-session).
 `~/.local/state/ufw-manager-tui/disabled-rules.json` — rules commented out with `s`, kept in full so they

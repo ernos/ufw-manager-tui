@@ -114,7 +114,9 @@ impl Tab {
             Tab::Activity => "What is being blocked right now, and what this session changed.",
             Tab::Presets => "One-key recipes for the jobs people actually have.",
             Tab::Help => "Keys, and what the jargon means.",
-            Tab::Settings => "Defaults for new rules, and how the wizard behaves.",
+            Tab::Settings => {
+                "General preferences, defaults for new rules, and where they are saved."
+            }
         }
     }
 
@@ -266,19 +268,76 @@ pub enum InputField {
  *
  * # Variants
  *
+ * * `CountersRefreshSecs` - How often packet counters are re-read.
+ * * `ReconcileSeconds` - The watchdog delay before a risky change is reverted.
  * * `Interface` - The default incoming interface.
  * * `FromAddress` - The default source address or network.
+ * * `FromPort` - The default source port, range or list.
  * * `ToAddress` - The default destination address or network.
+ * * `ToPort` - The default destination port, range or list.
  */
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SettingsField {
+    CountersRefreshSecs,
+    ReconcileSeconds,
     Interface,
     FromAddress,
+    FromPort,
     ToAddress,
+    ToPort,
 }
 
-/// Number of rows on the Settings tab: the seven rule defaults plus the skip-wizard checkbox.
-pub const SETTINGS_ROW_COUNT: usize = 8;
+/// Number of rows in the "General Settings" section of the Settings tab.
+pub const SETTINGS_GENERAL_ROWS: usize = 7;
+
+/// Number of rows in the "Rule defaults" section of the Settings tab.
+pub const SETTINGS_DEFAULT_ROWS: usize = 9;
+
+/// Index of the first rule-default row on the Settings tab.
+pub const SETTINGS_DEFAULT_START: usize = SETTINGS_GENERAL_ROWS;
+
+/// Index of the "Save settings" row, which is the last row on the Settings tab.
+pub const SETTINGS_SAVE_ROW: usize = SETTINGS_GENERAL_ROWS + SETTINGS_DEFAULT_ROWS;
+
+/// Number of selectable rows on the Settings tab: both sections plus the save row.
+pub const SETTINGS_ROW_COUNT: usize = SETTINGS_SAVE_ROW + 1;
+
+/// Zero-based row indices of the settings that are shown as a checkbox.
+pub const SETTINGS_CHECKBOX_ROWS: [usize; 3] = [1, 5, 6];
+
+/**
+ * Reports whether a Settings row is drawn and toggled as a checkbox.
+ *
+ * # Arguments
+ *
+ * * `index` (`usize`) - The zero-based row index.
+ *
+ * # Returns
+ *
+ * `bool` - `true` for the on/off settings, `false` for rows that cycle a value
+ * or open a text field.
+ */
+pub fn settings_row_is_checkbox(index: usize) -> bool {
+    SETTINGS_CHECKBOX_ROWS.contains(&index)
+}
+
+/// Values the theme row cycles through.
+pub const SETTINGS_THEMES: [&str; 4] = ["dark", "light", "16color", "mono"];
+
+/// Values the log-source row cycles through.
+pub const SETTINGS_LOG_SOURCES: [&str; 3] = ["auto", "file", "journal"];
+
+/// Values the default-action row cycles through.
+pub const SETTINGS_ACTIONS: [&str; 4] = ["allow", "deny", "reject", "limit"];
+
+/// Values the default-direction row cycles through.
+pub const SETTINGS_DIRECTIONS: [&str; 3] = ["in", "out", "forward"];
+
+/// Values the default-protocol row cycles through.
+pub const SETTINGS_PROTOCOLS: [&str; 5] = ["any", "tcp", "udp", "icmp", "ipv6-icmp"];
+
+/// Values the default-logging row cycles through.
+pub const SETTINGS_LOGGINGS: [&str; 3] = ["off", "log", "log-all"];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 /**
@@ -554,6 +613,7 @@ pub enum Escalation {
  * * `reconcile_seconds` (`u64`) - How long the watchdog waits before reverting.
  * * `show_counters` (`bool`) - Whether rule hit counters are displayed.
  * * `confirm_before_apply` (`bool`) - Whether changes need confirmation.
+ * * `no_color` (`bool`) - Whether colour was disabled at start-up; changing the theme keeps it off.
  * * `config` (`Config`) - The user preferences, edited on the Settings tab.
  * * `config_path` (`Option<std::path::PathBuf>`) - Where the config is saved; `None` disables persistence.
  */
@@ -568,6 +628,7 @@ pub struct AppOptions {
     pub reconcile_seconds: u64,
     pub show_counters: bool,
     pub confirm_before_apply: bool,
+    pub no_color: bool,
     pub config: Config,
     pub config_path: Option<std::path::PathBuf>,
 }
@@ -617,6 +678,8 @@ pub struct AppOptions {
  * * `config` (`Config`) - The user preferences, edited on the Settings tab.
  * * `config_path` (`Option<std::path::PathBuf>`) - Where the config is saved.
  * * `settings_input` (`Option<(SettingsField, TextInput)>`) - The open settings text field, if any.
+ * * `settings_dirty` (`bool`) - Whether the Settings tab holds changes not yet written to disk.
+ * * `no_color` (`bool`) - Whether colour was disabled at start-up.
  * * `readonly` (`bool`) - Whether writes are refused.
  * * `yes` (`bool`) - Whether confirmation is skipped.
  * * `confirm_before_apply` (`bool`) - Whether changes need confirmation.
@@ -673,6 +736,8 @@ pub struct App {
     pub config: Config,
     pub config_path: Option<std::path::PathBuf>,
     pub settings_input: Option<(SettingsField, TextInput)>,
+    pub settings_dirty: bool,
+    pub no_color: bool,
     pub readonly: bool,
     pub yes: bool,
     pub confirm_before_apply: bool,
@@ -822,6 +887,8 @@ impl App {
             config: options.config,
             config_path: options.config_path,
             settings_input: None,
+            settings_dirty: false,
+            no_color: options.no_color,
             readonly: options.readonly,
             yes: options.yes,
             confirm_before_apply: options.confirm_before_apply,
@@ -1462,10 +1529,12 @@ impl App {
      *
      * When a text field is open, characters are inserted and Enter submits the
      * value while Escape cancels. Otherwise navigation keys move the row cursor,
-     * Enter or the arrow keys cycle toggle rows (action, direction, protocol,
-     * logging) or open a text input for the text rows (interface, from address,
-     * to address), and Space flips the skip-wizard checkbox. Every committed
-     * change is saved to the config file immediately.
+     * Enter or the arrow keys cycle the enumerable rows, open a text input for
+     * the free-text rows, or write the file when the save row is selected. Space
+     * flips the on/off checkboxes and `S` saves from anywhere in the list.
+     *
+     * Changes take effect immediately but are only written to the configuration
+     * file when the user saves.
      *
      * # Arguments
      *
@@ -1531,18 +1600,103 @@ impl App {
             | KeyCode::End => {
                 Self::move_cursor(&mut self.settings_cursor, key.code, SETTINGS_ROW_COUNT)
             }
-            KeyCode::Enter | KeyCode::Right | KeyCode::Char('l') => self.settings_confirm(),
-            KeyCode::Left | KeyCode::Char('h') => self.settings_confirm(),
-            KeyCode::Char(' ') => self.toggle_skip_wizard(),
+            KeyCode::Enter | KeyCode::Right | KeyCode::Char('l') => self.settings_step(1),
+            KeyCode::Left | KeyCode::Char('h') => self.settings_step(-1),
+            KeyCode::Char(' ') => self.toggle_settings_row(),
+            KeyCode::Char('s') | KeyCode::Char('S') => self.save_settings(),
             _ => {}
         }
     }
 
     /**
-     * Confirms the selected settings row.
+     * Moves the selected settings row one value forwards or backwards.
      *
-     * Toggle rows cycle to the next value; text rows open a text input
-     * pre-filled with the current value; the skip-wizard row flips the checkbox.
+     * Enumerable rows cycle through their value list, free-text rows open a text
+     * input pre-filled with the current value, the on/off rows flip their flag,
+     * and the save row writes the file.
+     *
+     * # Arguments
+     *
+     * * `&mut self` - The application state being mutated.
+     * * `step` (`i32`) - `1` for the next value, `-1` for the previous one.
+     *
+     * # Returns
+     *
+     * This method returns no value.
+     */
+    fn settings_step(&mut self, step: i32) {
+        match self.settings_cursor {
+            SETTINGS_SAVE_ROW => self.save_settings(),
+            // General settings.
+            0 => {
+                let name = cycle_value(&self.config.theme, &SETTINGS_THEMES, step);
+                self.theme = Theme::new(&name, self.no_color).with_ascii(self.theme.ascii);
+                self.config.theme = name;
+                self.settings_dirty = true;
+            }
+            1 | 5 | 6 => self.toggle_settings_row(),
+            2 => self.open_settings_input(
+                SettingsField::CountersRefreshSecs,
+                self.config.counters_refresh_secs.to_string(),
+            ),
+            3 => {
+                self.config.log_source =
+                    cycle_value(&self.config.log_source, &SETTINGS_LOG_SOURCES, step);
+                self.settings_dirty = true;
+            }
+            4 => self.open_settings_input(
+                SettingsField::ReconcileSeconds,
+                self.config.reconcile_seconds.to_string(),
+            ),
+            // Rule defaults.
+            7 => {
+                self.config.defaults.action =
+                    cycle_value(&self.config.defaults.action, &SETTINGS_ACTIONS, step);
+                self.settings_dirty = true;
+            }
+            8 => {
+                self.config.defaults.direction =
+                    cycle_value(&self.config.defaults.direction, &SETTINGS_DIRECTIONS, step);
+                self.settings_dirty = true;
+            }
+            9 => self.open_settings_input(
+                SettingsField::Interface,
+                self.config.defaults.interface.clone(),
+            ),
+            10 => {
+                self.config.defaults.protocol =
+                    cycle_value(&self.config.defaults.protocol, &SETTINGS_PROTOCOLS, step);
+                self.settings_dirty = true;
+            }
+            11 => self.open_settings_input(
+                SettingsField::FromAddress,
+                self.config.defaults.from_addr.clone(),
+            ),
+            12 => self.open_settings_input(
+                SettingsField::FromPort,
+                self.config.defaults.from_port.clone(),
+            ),
+            13 => self.open_settings_input(
+                SettingsField::ToAddress,
+                self.config.defaults.to_addr.clone(),
+            ),
+            14 => self
+                .open_settings_input(SettingsField::ToPort, self.config.defaults.to_port.clone()),
+            15 => {
+                self.config.defaults.logging =
+                    cycle_value(&self.config.defaults.logging, &SETTINGS_LOGGINGS, step);
+                self.settings_dirty = true;
+            }
+            _ => {}
+        }
+    }
+
+    /**
+     * Flips the on/off setting under the cursor.
+     *
+     * Read-only mode cannot be switched off without the privileges to write, so
+     * the flag stays on in that case rather than promising something the backend
+     * cannot deliver.
      *
      * # Arguments
      *
@@ -1552,76 +1706,55 @@ impl App {
      *
      * This method returns no value.
      */
-    fn settings_confirm(&mut self) {
+    fn toggle_settings_row(&mut self) {
         match self.settings_cursor {
-            0 => {
-                let next = match self.config.defaults.action.as_str() {
-                    "allow" => "deny",
-                    "deny" => "reject",
-                    "reject" => "limit",
-                    _ => "allow",
-                };
-                self.config.defaults.action = next.into();
-                self.save_settings("default action");
-            }
             1 => {
-                self.config.defaults.direction = match self.config.defaults.direction.as_str() {
-                    "in" => "out".into(),
-                    "out" => "forward".into(),
-                    _ => "in".into(),
-                };
-                self.save_settings("default direction");
-            }
-            2 => {
-                self.settings_input = Some((
-                    SettingsField::Interface,
-                    TextInput::new(self.config.defaults.interface.clone()),
-                ));
-            }
-            3 => {
-                let next = match self.config.defaults.protocol.as_str() {
-                    "tcp" => "udp",
-                    "udp" => "any",
-                    _ => "tcp",
-                };
-                self.config.defaults.protocol = next.into();
-                self.save_settings("default protocol");
-            }
-            4 => {
-                self.settings_input = Some((
-                    SettingsField::FromAddress,
-                    TextInput::new(self.config.defaults.from_addr.clone()),
-                ));
+                self.confirm_before_apply = !self.confirm_before_apply;
+                self.config.confirm_before_apply = self.confirm_before_apply;
             }
             5 => {
-                self.settings_input = Some((
-                    SettingsField::ToAddress,
-                    TextInput::new(self.config.defaults.to_addr.clone()),
-                ));
+                let wanted = !self.readonly;
+                self.readonly = wanted || !self.backend.can_write();
+                self.config.readonly = self.readonly;
             }
             6 => {
-                let next = match self.config.defaults.logging.as_str() {
-                    "off" => "log",
-                    "log" => "log-all",
-                    _ => "off",
-                };
-                self.config.defaults.logging = next.into();
-                self.save_settings("default logging");
+                self.skip_wizard = !self.skip_wizard;
+                self.config.skip_wizard = self.skip_wizard;
             }
-            _ => self.toggle_skip_wizard(),
+            _ => return,
         }
+        self.settings_dirty = true;
+    }
+
+    /**
+     * Opens the text input for a settings row.
+     *
+     * # Arguments
+     *
+     * * `&mut self` - The application state being mutated.
+     * * `field` (`SettingsField`) - Which setting the typed value belongs to.
+     * * `value` (`String`) - The current value, used to pre-fill the input.
+     *
+     * # Returns
+     *
+     * This method returns no value.
+     */
+    fn open_settings_input(&mut self, field: SettingsField, value: String) {
+        self.settings_input = Some((field, TextInput::new(value)));
     }
 
     /**
      * Stores a value typed into a settings text field.
      *
-     * The field decides where the value goes; empty or `any` input clears the
-     * value so the rule falls back to "any".
+     * Addresses, the interface and the ports treat empty or `any` as "any", so
+     * clearing the field makes new rules fall back to the unrestricted value.
+     * The numeric settings reject anything that is not a whole number, leaving
+     * the previous value in place.
      *
      * # Arguments
      *
      * * `&mut self` - The application state being mutated.
-     * * `field` (`SettingsField`) - Which default the value belongs to.
+     * * `field` (`SettingsField`) - Which setting the value belongs to.
      * * `value` (`String`) - The trimmed text the user submitted.
      *
      * # Returns
@@ -1629,29 +1762,57 @@ impl App {
      * This method returns no value.
      */
     fn commit_settings_text(&mut self, field: SettingsField, value: String) {
-        let stored = if value.is_empty() || value == "any" {
+        let stored = if value.is_empty() || value.eq_ignore_ascii_case("any") {
             String::new()
         } else {
             value
         };
         match field {
-            SettingsField::Interface => {
-                self.config.defaults.interface = stored;
-                self.save_settings("default interface");
-            }
-            SettingsField::FromAddress => {
-                self.config.defaults.from_addr = stored;
-                self.save_settings("default from address");
-            }
-            SettingsField::ToAddress => {
-                self.config.defaults.to_addr = stored;
-                self.save_settings("default to address");
-            }
+            SettingsField::CountersRefreshSecs => match parse_seconds(&stored, false) {
+                Some(seconds) => self.config.counters_refresh_secs = seconds,
+                None => return self.reject_seconds("counter refresh"),
+            },
+            SettingsField::ReconcileSeconds => match parse_seconds(&stored, true) {
+                Some(seconds) => {
+                    self.config.reconcile_seconds = seconds;
+                    self.reconcile_seconds = seconds;
+                }
+                None => return self.reject_seconds("reconcile"),
+            },
+            SettingsField::Interface => self.config.defaults.interface = stored,
+            SettingsField::FromAddress => self.config.defaults.from_addr = stored,
+            SettingsField::FromPort => self.config.defaults.from_port = stored,
+            SettingsField::ToAddress => self.config.defaults.to_addr = stored,
+            SettingsField::ToPort => self.config.defaults.to_port = stored,
         }
+        self.settings_dirty = true;
     }
 
     /**
-     * Flips the skip-wizard checkbox and saves the config.
+     * Reports that a numeric setting was given something that is not a number.
+     *
+     * # Arguments
+     *
+     * * `&mut self` - The application state being mutated.
+     * * `what` (`&str`) - The human-readable name of the rejected setting.
+     *
+     * # Returns
+     *
+     * This method returns no value.
+     */
+    fn reject_seconds(&mut self, what: &str) {
+        self.set_status(
+            StatusLevel::Error,
+            format!("{what} must be a whole number of seconds"),
+        );
+    }
+
+    /**
+     * Writes every setting to the configuration file and reports the outcome.
+     *
+     * Changes already apply to the running session; this is what makes them
+     * survive a restart. A missing destination path is not an error (tests run
+     * without one); a write failure sets an error status instead.
      *
      * # Arguments
      *
@@ -1661,37 +1822,28 @@ impl App {
      *
      * This method returns no value.
      */
-    fn toggle_skip_wizard(&mut self) {
-        self.skip_wizard = !self.skip_wizard;
-        self.config.skip_wizard = self.skip_wizard;
-        self.save_settings("skip-wizard");
-    }
-
-    /**
-     * Persists the config file and reports the outcome on the status line.
-     *
-     * A missing destination path is not an error (tests run without one); a
-     * write failure sets an error status instead.
-     *
-     * # Arguments
-     *
-     * * `&mut self` - The application state being mutated.
-     * * `what` (`&str`) - A short description of what changed, for the status line.
-     *
-     * # Returns
-     *
-     * This method returns no value.
-     */
-    fn save_settings(&mut self, what: &str) {
+    fn save_settings(&mut self) {
         match &self.config_path {
             Some(path) => match self.config.save(Some(path)) {
-                Ok(()) => self.set_status(StatusLevel::Good, format!("saved {what}")),
+                Ok(()) => {
+                    self.settings_dirty = false;
+                    self.set_status(
+                        StatusLevel::Good,
+                        format!("settings saved to {}", path.display()),
+                    );
+                }
                 Err(error) => self.set_status(
                     StatusLevel::Error,
-                    format!("could not save {what}: {error}"),
+                    format!("could not save {}: {error}", path.display()),
                 ),
             },
-            None => self.set_status(StatusLevel::Info, format!("{what} set (not persisted)")),
+            None => {
+                self.settings_dirty = false;
+                self.set_status(
+                    StatusLevel::Info,
+                    "settings applied for this session only (no config path)",
+                );
+            }
         }
     }
 
@@ -3939,6 +4091,58 @@ impl App {
             lines.push(String::new());
         }
         lines
+    }
+}
+
+/**
+ * Returns the next value of a settings ring.
+ *
+ * Comparison is case-insensitive, so a hand-edited value such as `LOG-ALL` still
+ * continues from the right place. A value the ring does not know about starts at
+ * the first entry (or the last when stepping backwards).
+ *
+ * # Arguments
+ *
+ * * `current` (`&str`) - The value currently in effect.
+ * * `ring` (`&[&str]`) - The allowed values, in display order.
+ * * `step` (`i32`) - `1` for the next value, `-1` for the previous one.
+ *
+ * # Returns
+ *
+ * `String` - The neighbouring value, owned so the caller can store it.
+ */
+fn cycle_value(current: &str, ring: &[&str], step: i32) -> String {
+    let position = ring
+        .iter()
+        .position(|value| value.eq_ignore_ascii_case(current));
+    let len = ring.len() as i32;
+    let index = match position {
+        Some(index) => (index as i32 + step).rem_euclid(len),
+        None if step < 0 => len - 1,
+        None => 0,
+    };
+    ring[index as usize].to_string()
+}
+
+/**
+ * Parses a number of seconds typed into the Settings tab.
+ *
+ * # Arguments
+ *
+ * * `value` (`&str`) - The text the user submitted.
+ * * `allow_zero` (`bool`) - Whether `0` is a meaningful value, as it is for the
+ *   watchdog delay where it means "disabled".
+ *
+ * # Returns
+ *
+ * `Option<u64>` - The parsed number, or `None` when the text is not a whole
+ * number or is a zero that this setting does not accept.
+ */
+fn parse_seconds(value: &str, allow_zero: bool) -> Option<u64> {
+    match value.parse::<u64>() {
+        Ok(0) if !allow_zero => None,
+        Ok(seconds) => Some(seconds),
+        Err(_) => None,
     }
 }
 

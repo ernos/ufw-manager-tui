@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 
-use crate::core::rule::{Action, Direction, LogMode, Protocol, RuleDraft};
+use crate::core::rule::{Action, Direction, LogMode, PortSpec, Protocol, RuleDraft};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
@@ -68,7 +68,9 @@ pub struct Config {
  * * `interface` (`String`) - Default incoming interface; empty means any.
  * * `protocol` (`String`) - Default protocol for new rules.
  * * `from_addr` (`String`) - Default source address or network; empty means any.
+ * * `from_port` (`String`) - Default source port, range or list; empty means any.
  * * `to_addr` (`String`) - Default destination address or network; empty means any.
+ * * `to_port` (`String`) - Default destination port, range or list; empty means any.
  * * `logging` (`String`) - Default logging mode for new rules.
  */
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -84,8 +86,12 @@ pub struct RuleDefaults {
     pub protocol: String,
     /// Default source address or network; empty means any.
     pub from_addr: String,
+    /// Default source port, range or list; empty means any.
+    pub from_port: String,
     /// Default destination address or network; empty means any.
     pub to_addr: String,
+    /// Default destination port, range or list; empty means any.
+    pub to_port: String,
     /// Default logging mode for new rules.
     pub logging: String,
 }
@@ -102,7 +108,7 @@ impl Default for RuleDefaults {
      * # Returns
      *
      * `RuleDefaults` - Allow inbound, any interface, any protocol, any address,
-     * no logging.
+     * any port, logging everything.
      */
     fn default() -> Self {
         Self {
@@ -111,8 +117,10 @@ impl Default for RuleDefaults {
             interface: String::new(),
             protocol: "any".into(),
             from_addr: String::new(),
+            from_port: String::new(),
             to_addr: String::new(),
-            logging: "off".into(),
+            to_port: String::new(),
+            logging: "log-all".into(),
         }
     }
 }
@@ -141,9 +149,9 @@ impl RuleDefaults {
             interface_out: None,
             protocol: self.protocol.parse().unwrap_or(Protocol::Any),
             from_addr: empty_to_none(&self.from_addr),
-            from_port: Default::default(),
+            from_port: parse_port_spec(&self.from_port),
             to_addr: empty_to_none(&self.to_addr),
-            to_port: Default::default(),
+            to_port: parse_port_spec(&self.to_port),
             log: match self.logging.as_str() {
                 "log" => LogMode::Log,
                 "log-all" => LogMode::LogAll,
@@ -173,6 +181,31 @@ fn empty_to_none(value: &str) -> Option<String> {
     } else {
         Some(trimmed.to_string())
     }
+}
+
+/**
+ * Parses the configured port value into a [`PortSpec`].
+ *
+ * Empty input and `any` both mean "any port". Numeric input is read as a port,
+ * range (`8000:8100`) or list (`80,443`), and any other text is treated as an
+ * application profile name, exactly as the wizard does. A malformed range falls
+ * back to "any port" so a hand-edited config file cannot block rule creation.
+ *
+ * # Arguments
+ *
+ * * `value` (`&str`) - The configured port, range, list or application profile name.
+ *
+ * # Returns
+ *
+ * `PortSpec` - The parsed selection, or [`PortSpec::Any`] when the value is
+ * empty or an unparseable range.
+ */
+fn parse_port_spec(value: &str) -> PortSpec {
+    let trimmed = value.trim();
+    if trimmed.is_empty() || trimmed.eq_ignore_ascii_case("any") {
+        return PortSpec::Any;
+    }
+    trimmed.parse().unwrap_or_default()
 }
 
 impl Default for Config {
@@ -227,6 +260,26 @@ impl Config {
     }
 
     /**
+     * Resolves which file a save or load should use.
+     *
+     * # Arguments
+     *
+     * * `explicit` (`Option<&Path>`) - A path given with `--config`. When `None`,
+     *   [`Config::default_path`] is used.
+     *
+     * # Returns
+     *
+     * `Option<PathBuf>` - The path to use, or `None` when no explicit path was
+     * given and the platform configuration directory is unknown.
+     */
+    pub fn resolved_path(explicit: Option<&Path>) -> Option<PathBuf> {
+        match explicit {
+            Some(path) => Some(path.to_path_buf()),
+            None => Self::default_path(),
+        }
+    }
+
+    /**
      * Loads the config, falling back to defaults for anything unreadable.
      *
      * # Arguments
@@ -245,11 +298,7 @@ impl Config {
      * never prevents the user from fixing their firewall.
      */
     pub fn load(explicit: Option<&Path>) -> Self {
-        let path = match explicit {
-            Some(path) => Some(path.to_path_buf()),
-            None => Self::default_path(),
-        };
-        let Some(path) = path else {
+        let Some(path) = Self::resolved_path(explicit) else {
             return Self::default();
         };
         let Ok(text) = std::fs::read_to_string(path) else {
@@ -280,11 +329,7 @@ impl Config {
      * instead, which later loads as defaults.
      */
     pub fn save(&self, explicit: Option<&Path>) -> std::io::Result<()> {
-        let path = match explicit {
-            Some(path) => Some(path.to_path_buf()),
-            None => Self::default_path(),
-        };
-        let Some(path) = path else {
+        let Some(path) = Self::resolved_path(explicit) else {
             return Ok(());
         };
         if let Some(parent) = path.parent() {
@@ -425,7 +470,9 @@ mod tests {
                 interface: "wg0".into(),
                 protocol: "tcp".into(),
                 from_addr: "192.168.1.0/24".into(),
+                from_port: "1024:65535".into(),
                 to_addr: "10.0.0.0/8".into(),
+                to_port: "80,443".into(),
                 logging: "log-all".into(),
             },
             ..Default::default()
@@ -438,7 +485,9 @@ mod tests {
         assert_eq!(loaded.defaults.interface, "wg0");
         assert_eq!(loaded.defaults.protocol, "tcp");
         assert_eq!(loaded.defaults.from_addr, "192.168.1.0/24");
+        assert_eq!(loaded.defaults.from_port, "1024:65535");
         assert_eq!(loaded.defaults.to_addr, "10.0.0.0/8");
+        assert_eq!(loaded.defaults.to_port, "80,443");
         assert_eq!(loaded.defaults.logging, "log-all");
     }
 
@@ -462,7 +511,7 @@ mod tests {
         assert_eq!(config.theme, "mono");
         assert!(!config.skip_wizard);
         assert_eq!(config.defaults.action, "allow");
-        assert_eq!(config.defaults.logging, "off");
+        assert_eq!(config.defaults.logging, "log-all");
     }
 
     #[test]
@@ -484,7 +533,9 @@ mod tests {
             interface: "eth0".into(),
             protocol: "udp".into(),
             from_addr: "10.0.0.0/8".into(),
+            from_port: "50000".into(),
             to_addr: String::new(),
+            to_port: "5353".into(),
             logging: "log".into(),
         };
         let draft = defaults.to_draft();
@@ -493,7 +544,9 @@ mod tests {
         assert_eq!(draft.interface_in.as_deref(), Some("eth0"));
         assert_eq!(draft.protocol, crate::core::rule::Protocol::Udp);
         assert_eq!(draft.from_addr.as_deref(), Some("10.0.0.0/8"));
+        assert_eq!(draft.from_port, crate::core::rule::PortSpec::single(50000));
         assert_eq!(draft.to_addr, None);
+        assert_eq!(draft.to_port, crate::core::rule::PortSpec::single(5353));
         assert_eq!(draft.log, crate::core::rule::LogMode::Log);
     }
 
@@ -516,7 +569,9 @@ mod tests {
             interface: "  ".into(),
             protocol: "quantum".into(),
             from_addr: "  ".into(),
+            from_port: "".into(),
             to_addr: "203.0.113.9".into(),
+            to_port: "  ".into(),
             logging: "loud".into(),
         };
         let draft = defaults.to_draft();
@@ -525,7 +580,33 @@ mod tests {
         assert_eq!(draft.interface_in, None);
         assert_eq!(draft.protocol, crate::core::rule::Protocol::Any);
         assert_eq!(draft.from_addr, None);
+        assert_eq!(draft.from_port, crate::core::rule::PortSpec::Any);
         assert_eq!(draft.to_addr.as_deref(), Some("203.0.113.9"));
+        assert_eq!(draft.to_port, crate::core::rule::PortSpec::Any);
         assert_eq!(draft.log, crate::core::rule::LogMode::None);
+    }
+
+    #[test]
+    /**
+     * Verifies that a non-numeric port value is treated as an application
+     * profile, which is how the wizard already accepts names such as `OpenSSH`.
+     *
+     * # Arguments
+     *
+     * This function takes no arguments.
+     *
+     * # Returns
+     *
+     * `()` - This function returns no value; it asserts on the draft port.
+     */
+    fn a_named_port_default_becomes_an_application_profile() {
+        let defaults = RuleDefaults {
+            to_port: "OpenSSH".into(),
+            ..Default::default()
+        };
+        assert_eq!(
+            defaults.to_draft().to_port,
+            crate::core::rule::PortSpec::App("OpenSSH".into())
+        );
     }
 }

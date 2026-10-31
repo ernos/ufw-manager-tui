@@ -82,7 +82,7 @@ mod tests {
     fn help_documents_the_keys_and_the_jargon() {
         let mut app = demo_app();
         app.tab = Tab::Help;
-        let output = render(&app, 130, 50);
+        let output = render(&app, 130, 60);
         assert!(output.contains("Everywhere"));
         assert!(output.contains("Plain-English glossary"));
     }

@@ -101,7 +101,8 @@ const HELP_HINTS: &[Hint] = &[
 const SETTINGS_HINTS: &[Hint] = &[
     hint("↑↓", "select"),
     hint("ENTER", "change"),
-    hint("SPACE", "skip wizard"),
+    hint("SPACE", "toggle"),
+    hint("S", "save"),
     hint("?", "help"),
 ];
 
@@ -220,8 +221,12 @@ pub const SETTINGS: HelpSection = HelpSection {
     entries: &[
         ("↑↓", "Select a setting"),
         ("ENTER / ← →", "Change the selected setting"),
-        ("SPACE", "Toggle the skip-wizard checkbox"),
-        ("type", "Interface and address fields open a text box"),
+        ("SPACE", "Toggle the on/off settings"),
+        ("S", "Save every setting to config.toml"),
+        (
+            "type",
+            "Interface, address, port and seconds fields open a text box",
+        ),
     ],
 };
 
