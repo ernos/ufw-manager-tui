@@ -279,6 +279,44 @@ pub enum SettingsField {
 /// Number of rows on the Settings tab: the seven rule defaults plus the skip-wizard checkbox.
 pub const SETTINGS_ROW_COUNT: usize = 8;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/**
+ * Which way the Rules tab moves the selected rule.
+ *
+ * Moving a rule only changes the order in which `ufw` evaluates it, which is
+ * why it is offered as a first-class action: a specific rule above a general one
+ * is the single most common real-world mistake.
+ *
+ * # Variants
+ *
+ * * `Up` - One position towards the top of the list, so the rule is evaluated earlier.
+ * * `Down` - One position towards the bottom of the list, so it is evaluated later.
+ */
+pub enum MoveDirection {
+    Up,
+    Down,
+}
+
+impl MoveDirection {
+    /**
+     * Returns the message shown when the rule cannot move any further this way.
+     *
+     * # Arguments
+     *
+     * * `self` (`MoveDirection`) - The direction that was requested.
+     *
+     * # Returns
+     *
+     * A `&'static str` telling the user the rule is already as far as it can go.
+     */
+    fn at_limit(self) -> &'static str {
+        match self {
+            MoveDirection::Up => "already at the top",
+            MoveDirection::Down => "already at the bottom",
+        }
+    }
+}
+
 /**
  * State of the guided rule wizard.
  *
@@ -1668,9 +1706,10 @@ impl App {
     /**
      * Handles keys on the Rules tab.
      *
-     * Navigation keys move the rules cursor; `a` adds, `e`/Enter edits, `d`
-     * deletes, `y` duplicates, `x` moves, `t` tests, `/` opens the filter, `n`
-     * edits the note, and Space shows rule details.
+     * Navigation keys move the rules cursor; Ctrl+Up and Ctrl+Down move the
+     * selected rule itself one position up or down the evaluation order, `a`
+     * adds, `e`/Enter edits, `d` deletes, `y` duplicates, `t` tests, `/` opens
+     * the filter, `n` edits the note, and Space shows rule details.
      *
      * # Arguments
      *
@@ -1682,7 +1721,12 @@ impl App {
      * This method returns no value.
      */
     fn handle_rules_key(&mut self, key: KeyEvent) {
+        let ctrl = key.modifiers.contains(KeyModifiers::CONTROL);
         match key.code {
+            // Checked before the plain arrows below, which would otherwise swallow the modified
+            // presses and move the cursor instead of the rule.
+            KeyCode::Up if ctrl => self.move_selected(MoveDirection::Up),
+            KeyCode::Down if ctrl => self.move_selected(MoveDirection::Down),
             KeyCode::Up
             | KeyCode::Down
             | KeyCode::Char('k')
@@ -1698,7 +1742,6 @@ impl App {
             KeyCode::Char('e') | KeyCode::Enter => self.start_edit(),
             KeyCode::Char('d') => self.delete_selected(),
             KeyCode::Char('y') => self.duplicate_selected(),
-            KeyCode::Char('x') => self.move_selected(),
             KeyCode::Char('t') => self.test_selected(),
             KeyCode::Char('/') => {
                 self.filter = Some(TextInput::new(
@@ -1890,31 +1933,39 @@ impl App {
     }
 
     /**
-     * Queues a change that moves the selected rule one position up.
+     * Queues a change that moves the selected rule one position.
      *
-     * A rule already at the top sets an informational status instead. On success
-     * the rules cursor follows the rule to its new position.
+     * A rule that cannot move any further in the requested direction sets an
+     * informational status instead of a change. On success the rules cursor
+     * follows the rule to its new position.
+     *
+     * Reordering never changes what the firewall does to a packet that matches
+     * exactly one rule; it changes which rule wins when two of them match, which
+     * is why the earlier rule is always the more specific one.
      *
      * # Arguments
      *
      * * `&mut self` - The application state being mutated.
+     * * `direction` (`MoveDirection`) - Which way to move the rule: `Up` towards the top of the
+     *   list, where it is evaluated earlier, or `Down` towards the bottom.
      *
      * # Returns
      *
      * This method returns no value.
      */
-    fn move_selected(&mut self) {
+    fn move_selected(&mut self, direction: MoveDirection) {
         let Some(rule) = self.selected_rule() else {
             return;
         };
         let count = self.state.rules.len() as u32;
-        let target = if rule.number > 1 {
-            rule.number - 1
-        } else {
-            count.min(2)
+        let target = match direction {
+            MoveDirection::Up => rule.number.saturating_sub(1),
+            MoveDirection::Down => rule.number.saturating_add(1).min(count),
         };
-        if target == rule.number {
-            self.set_status(StatusLevel::Info, "already at the top");
+        // `target == 0` is the top rule moving up; `target == rule.number` is the bottom rule
+        // moving down, or the only rule in a one-rule list.
+        if count < 2 || target == 0 || target == rule.number {
+            self.set_status(StatusLevel::Info, direction.at_limit());
             return;
         }
         match command::change_move(&rule, target, self.state.rules.len()) {

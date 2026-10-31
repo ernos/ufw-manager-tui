@@ -425,7 +425,10 @@ fn remaining_after_delete(existing: usize) -> usize {
 pub fn change_delete(rule: &Rule, existing: usize) -> Result<Change, String> {
     let draft = rule.to_draft();
     Ok(Change {
-        description: format!("Delete rule #{}: {}",rule.number,crate::core::explain::explain_rule(rule)
+        description: format!(
+            "Delete rule #{}: {}",
+            rule.number,
+            crate::core::explain::explain_rule(rule)
         ),
         steps: vec![delete_by_number(rule.number)],
         inverse: vec![insert_rule(

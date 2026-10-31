@@ -261,7 +261,7 @@ single keypress.
       ufw allow 22/tcp
 
   ↑↓ move   ←→ pane   ENTER details   e edit   a add   d delete   y duplicate
-  / filter   x move up/down   t test this rule   r refresh   u undo
+  / filter   CTRL+↑↓ move rule   t test this rule   r refresh   u undo
 ```
 
 - Row numbers are **ufw's own rule numbers**, so they match `ufw status numbered` and the reference docs.
@@ -274,8 +274,8 @@ single keypress.
 - Route (`FWD`) rules are shown, created, edited and deleted like any other rule; the detail pane rebuilds
   them as `ufw route …` commands, and an edit is a `delete N` followed by `ufw route insert N …`.
 - `/` opens an incremental filter (match action, port, address, app name, note).
-- `x` opens a small reorder modal (`u`=up, `d`=down, `p`=move to top) implemented with `ufw insert N`, with
-  an explicit note that reordering changes which rule wins.
+- `CTRL+↑` / `CTRL+↓` move the selected rule one position earlier or later, implemented as `delete N` followed
+  by `ufw insert N`, with an explicit note that reordering changes which rule wins.
 
 Editing, moving and undoing a rule all run as `delete N` followed by a re-add. `ufw insert N` is only
 accepted when `N` is a position the list already has, so the re-add is emitted as a plain append whenever the
@@ -369,7 +369,7 @@ Advanced step pre-filled from the rule being edited.
   └───────────────────────────────────────────────────────────────────────┘
   A computer at 192.168.1.50 connecting to port 22 from port 51000 would be
   ALLOWED by rule #1. Rule #2 (limit, LAN only) never gets a chance to run —
-  #1 is above it and less restrictive.  [ x ] Move #2 above #1
+  #1 is above it and less restrictive.  [ CTRL+↑ ] Move #2 above #1
 ```
 
 The "x" action at the bottom is the fix for the single most common real-world `ufw` mistake (general rule
@@ -701,7 +701,7 @@ drift. `↑↓←→` + `Enter` + `Esc` alone complete every task.
 | `e` / `Enter` | Edit selected rule |
 | `d` | Delete selected rule |
 | `y` | Duplicate selected rule |
-| `x` | Reorder (move up/down/to top) |
+| `CTRL+↑` / `CTRL+↓` | Reorder: move the rule one position up/down |
 | `t` | Test traffic against this rule |
 | `/` | Filter |
 | `Space` | Enter the detail pane |
@@ -898,7 +898,7 @@ ship. M4 is what makes it better than `ufw`. M5 is what makes it usable by the a
 1. **Route (FWD) rules** — [Shipped fully editable: `RuleDraft` carries both interfaces, the command builder
    emits `ufw route …`, and the wizard and Presets tab can create them. Newcomers reach them only from the
    "Forward traffic through this machine" goal or the tunnel presets, so they stay out of the way.]
-2. **Reorder UI** — `x` moves the selected rule one position up (or to the top). [Shipped as a single keypress rather than a modal, because `ufw insert N` makes anything more elaborate pointless for one-rule moves.] Was: is `x` + `u`/`d` enough, or does `ufw`'s `insert N` deserve a drag-style list with visible
+2. **Reorder UI** — `CTRL+↑` / `CTRL+↓` move the selected rule one position. [Shipped as two modified cursor keys rather than a modal, because `ufw insert N` makes anything more elaborate pointless for one-rule moves; a shifted twin of the old `x` was not an option because `X` already asks sudo for privileges.] Was: is `x` + `u`/`d` enough, or does `ufw`'s `insert N` deserve a drag-style list with visible
    positions?
 3. **`ufw reset`** — [Shipped as the last Presets entry, always blocked by the lockout guard unless forced, and not undoable.] Was: expose it at all, or leave it to the CLI since it is unrecoverable in-app?
 4. **Docker detection** — the DOCKER-USER chain bypasses ufw. Warn only, or offer to manage `DOCKER-USER`

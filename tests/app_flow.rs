@@ -75,6 +75,23 @@ fn press(app: &mut App, code: KeyCode) {
     app.handle_key(key(code));
 }
 
+/**
+ * Sends a single key press while a modifier is held.
+ *
+ * # Arguments
+ *
+ * * `app` (`&mut App`) - The application to deliver the key to.
+ * * `code` (`KeyCode`) - The key to press.
+ * * `modifiers` (`KeyModifiers`) - The modifiers held down, such as `KeyModifiers::CONTROL`.
+ *
+ * # Returns
+ *
+ * `()` - This function returns no value.
+ */
+fn press_with(app: &mut App, code: KeyCode, modifiers: KeyModifiers) {
+    app.handle_key(KeyEvent::new(code, modifiers));
+}
+
 #[test]
 /**
  * Verifies that the demo backend loads a realistic rule set: the firewall is
@@ -193,6 +210,131 @@ fn undo_puts_the_rule_set_back_and_pops_the_journal() {
     app.undo();
     assert_eq!(app.state.rules.len(), before, "undo must remove the rule");
     assert!(app.journal.is_empty(), "the journal entry must be consumed");
+}
+
+#[test]
+/**
+ * Verifies that Ctrl+Up moves the selected rule one position earlier.
+ *
+ * Rule #4 is the deny rule; moving it up swaps it with rule #3.
+ *
+ * # Arguments
+ *
+ * This function takes no arguments.
+ *
+ * # Returns
+ *
+ * `()` - This function returns no value.
+ *
+ * # Panics
+ *
+ * Panics if the rule did not change position or no journal entry was written.
+ */
+fn ctrl_up_moves_the_selected_rule_up() {
+    let mut app = app();
+    app.tab = Tab::Rules;
+    app.rules_cursor = 3;
+    assert_eq!(app.selected_rule().unwrap().number, 4);
+
+    press_with(&mut app, KeyCode::Up, KeyModifiers::CONTROL);
+
+    assert_eq!(app.state.rules[2].number, 3);
+    assert_eq!(app.state.rules[2].to.port.to_string(), "3306");
+    assert_eq!(app.state.rules.len(), 6, "moving must not add a rule");
+    assert_eq!(app.journal.len(), 1);
+}
+
+#[test]
+/**
+ * Verifies that Ctrl+Down moves the selected rule one position later.
+ *
+ * # Arguments
+ *
+ * This function takes no arguments.
+ *
+ * # Returns
+ *
+ * `()` - This function returns no value.
+ *
+ * # Panics
+ *
+ * Panics if the rule did not change position or no journal entry was written.
+ */
+fn ctrl_down_moves_the_selected_rule_down() {
+    let mut app = app();
+    app.tab = Tab::Rules;
+    app.rules_cursor = 3;
+    assert_eq!(app.selected_rule().unwrap().number, 4);
+
+    press_with(&mut app, KeyCode::Down, KeyModifiers::CONTROL);
+
+    assert_eq!(app.state.rules[4].number, 5);
+    assert_eq!(app.state.rules[4].to.port.to_string(), "3306");
+    assert_eq!(app.state.rules.len(), 6, "moving must not add a rule");
+    assert_eq!(app.journal.len(), 1);
+}
+
+#[test]
+/**
+ * Verifies that moving a rule past the end of the list does nothing.
+ *
+ * A rule that cannot move further is reported instead of being deleted and
+ * re-added in the same place.
+ *
+ * # Arguments
+ *
+ * This function takes no arguments.
+ *
+ * # Returns
+ *
+ * `()` - This function returns no value.
+ *
+ * # Panics
+ *
+ * Panics if the rule set changed or a journal entry was written.
+ */
+fn moving_a_rule_past_the_end_of_the_list_is_a_no_op() {
+    let mut app = app();
+    app.tab = Tab::Rules;
+
+    app.rules_cursor = 0;
+    press_with(&mut app, KeyCode::Up, KeyModifiers::CONTROL);
+    assert!(app.journal.is_empty(), "the top rule cannot move up");
+
+    app.rules_cursor = 5;
+    press_with(&mut app, KeyCode::Down, KeyModifiers::CONTROL);
+    assert!(app.journal.is_empty(), "the bottom rule cannot move down");
+    assert_eq!(app.state.rules.len(), 6);
+}
+
+#[test]
+/**
+ * Verifies that the plain arrows still move the cursor rather than the rule.
+ *
+ * # Arguments
+ *
+ * This function takes no arguments.
+ *
+ * # Returns
+ *
+ * `()` - This function returns no value.
+ *
+ * # Panics
+ *
+ * Panics if the rule set changed.
+ */
+fn plain_arrows_only_move_the_cursor() {
+    let mut app = app();
+    app.tab = Tab::Rules;
+    app.rules_cursor = 3;
+
+    press(&mut app, KeyCode::Down);
+    assert_eq!(app.rules_cursor, 4);
+    press(&mut app, KeyCode::Up);
+    assert_eq!(app.rules_cursor, 3);
+
+    assert!(app.journal.is_empty(), "the cursor must not change rules");
+    assert_eq!(app.state.rules.len(), 6);
 }
 
 #[test]

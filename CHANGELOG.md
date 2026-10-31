@@ -4,6 +4,7 @@
 
 ## Unreleased
 
+- Moving a rule is now `CTRL+↑` / `CTRL+↓` instead of `x`: the selection moves one position up or down the evaluation order, and a rule already at the top or bottom is reported instead of being deleted and re-added in place.
 - Forwarding (`FWD`) rules can now be created, edited and deleted. `RuleDraft` carries an outgoing interface, the command builder emits `ufw route …` (and `ufw route insert NUM …` when a rule is edited, moved or restored), and validation accepts forwarding rules instead of rejecting them. `ufw route delete NUM` is not valid, so deletion keeps using plain `ufw delete NUM`.
 - The wizard gained a "Forward traffic through this machine" goal, an "Out interface" row, and a direction that cycles in → out → forward. Presets offer "Forward traffic from <tunnel> to my own network" for detected `wg*`/`tun*`/`tap*`/`tailscale*` interfaces.
 - The wizard warns when a forwarding rule is drafted while `ufw` reports `disabled (routed)`, because the rule does nothing until `net/ipv4/ip_forward=1`.
