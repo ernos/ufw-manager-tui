@@ -255,7 +255,7 @@ single keypress.
    [ 3] ALLOW IN   OpenSSH               10.0.0.0/8              44    Office VPN     🟡
    [ 4] ALLOW OUT  53/udp (DNS)          Anywhere               8.9k                 ℹ
    [ 5] DENY  IN   3306/tcp              Anywhere               0                    ℹ
-   [ 6] ALLOW FWD  Anywhere on wg0       Anywhere               12    WireGuard      🟡 route rule (read-only)
+   [ 6] ALLOW FWD  Anywhere on wg0       Anywhere               12    WireGuard      🟡 route rule
 
   #1  Allow anyone on the internet to connect to TCP port 22 (SSH) on this machine.
       ufw allow 22/tcp
@@ -271,7 +271,8 @@ single keypress.
   risk reasons. This is what teaches the user the syntax without a tutorial.
 - Rules are always displayed in **evaluation order** and the header says so — the single most important
   concept in firewall configuration.
-- Route (`FWD`) rules are shown but edit is disabled; deleting requires the lockout guard's extra warning.
+- Route (`FWD`) rules are shown, created, edited and deleted like any other rule; the detail pane rebuilds
+  them as `ufw route …` commands, and an edit is a `delete N` followed by `ufw route insert N …`.
 - `/` opens an incremental filter (match action, port, address, app name, note).
 - `x` opens a small reorder modal (`u`=up, `d`=down, `p`=move to top) implemented with `ufw insert N`, with
   an explicit note that reordering changes which rule wins.
@@ -473,7 +474,7 @@ struct Rule {
     log: LogMode,                // None | Log | LogAll
     comment: Option<String>,     // ufw 0.36 native comment
     v6: bool,
-    route: bool,                 // FWD rule -> read-only in v1
+    route: bool,                 // true for a `ufw route` rule (direction == Forward)
 }
 
 enum PortSpec {
@@ -894,8 +895,9 @@ ship. M4 is what makes it better than `ufw`. M5 is what makes it usable by the a
 
 ## 19. Open questions (v0.1 answers in brackets)
 
-1. **Route (FWD) rules** — read-only in v1. [Shipped read-only: shown, deletable only through the guard, not editable.] Should they be fully editable, or is hiding them from newcomers
-   the better default?
+1. **Route (FWD) rules** — [Shipped fully editable: `RuleDraft` carries both interfaces, the command builder
+   emits `ufw route …`, and the wizard and Presets tab can create them. Newcomers reach them only from the
+   "Forward traffic through this machine" goal or the tunnel presets, so they stay out of the way.]
 2. **Reorder UI** — `x` moves the selected rule one position up (or to the top). [Shipped as a single keypress rather than a modal, because `ufw insert N` makes anything more elaborate pointless for one-rule moves.] Was: is `x` + `u`/`d` enough, or does `ufw`'s `insert N` deserve a drag-style list with visible
    positions?
 3. **`ufw reset`** — [Shipped as the last Presets entry, always blocked by the lockout guard unless forced, and not undoable.] Was: expose it at all, or leave it to the CLI since it is unrecoverable in-app?
@@ -927,7 +929,8 @@ Deliberate omissions from the design:
 
 Known gaps worth naming:
 
-- Route (`FWD`) rules can be seen and deleted but not created or edited.
+- Forwarding rules can be created, edited and deleted; they still depend on kernel forwarding
+  (`net/ipv4/ip_forward=1`), which the wizard warns about when `ufw` reports `disabled (routed)`.
 - The simulator models ufw's built-in chains by hand; it is a model, and the UI says so.
 - The `y` (duplicate) action copies a rule into the wizard rather than cloning it outright, so the user
   confirms the change like any other.

@@ -498,28 +498,18 @@ fn apply(state: &mut FirewallState, args: &[String]) {
                 renumber(state);
             }
         }
-        Some("delete") => {
-            if let Some(rule) = rule_from_args(args, 0) {
-                if let Some(index) = state
-                    .rules
-                    .iter()
-                    .position(|r| r.signature() == rule.signature())
-                {
-                    state.rules.remove(index);
-                    renumber(state);
-                }
-            }
+        Some("delete") => delete_matching(state, args),
+        Some("insert") => insert_state_rule(state, args, 1),
+        Some("route") if args.get(1).map(String::as_str) == Some("delete") => {
+            delete_matching(state, args)
         }
-        Some("insert") => {
-            let position = args.get(1).and_then(|n| n.parse::<u32>().ok()).unwrap_or(1);
-            if let Some(rule) = rule_from_args(args, position) {
-                let index = state
-                    .rules
-                    .iter()
-                    .position(|r| r.number >= position)
-                    .unwrap_or(state.rules.len());
-                state.rules.insert(index, rule);
-                renumber(state);
+        Some("route") if args.get(1).map(String::as_str) == Some("insert") => {
+            insert_state_rule(state, args, 2)
+        }
+        Some("route") => {
+            let number = state.next_number();
+            if let Some(rule) = rule_from_args(args, number) {
+                state.rules.push(rule);
             }
         }
         Some("--force") => {
@@ -560,6 +550,72 @@ fn apply(state: &mut FirewallState, args: &[String]) {
 }
 
 /**
+ * Deletes the rule that matches an argument vector, by specification.
+ *
+ * Used for both `delete <rule>` and `route delete <rule>`. The first rule whose
+ * signature matches is removed, mirroring `ufw`'s own delete-by-specification
+ * behaviour.
+ *
+ * # Arguments
+ *
+ * * `state` (`&mut FirewallState`) - The demo firewall state being mutated.
+ * * `args` (`&[String]`) - The argument vector naming the rule to delete.
+ *
+ * # Returns
+ *
+ * `()` - This function returns no value; a vector that names no known rule is
+ * ignored.
+ */
+fn delete_matching(state: &mut FirewallState, args: &[String]) {
+    let Some(rule) = rule_from_args(args, 0) else {
+        return;
+    };
+    if let Some(index) = state
+        .rules
+        .iter()
+        .position(|r| r.signature() == rule.signature())
+    {
+        state.rules.remove(index);
+        renumber(state);
+    }
+}
+
+/**
+ * Inserts the rule named by an argument vector at a 1-based position.
+ *
+ * Handles both `insert NUM <rule>` and `route insert NUM <rule>`; the argument
+ * that carries the position is passed in, because the two forms put it at
+ * different indexes.
+ *
+ * # Arguments
+ *
+ * * `state` (`&mut FirewallState`) - The demo firewall state being mutated.
+ * * `args` (`&[String]`) - The argument vector to interpret.
+ * * `position_index` (`usize`) - The index of the argument holding the position.
+ *
+ * # Returns
+ *
+ * `()` - This function returns no value; an unparsable position falls back to 1
+ * and an unparsable rule is ignored.
+ */
+fn insert_state_rule(state: &mut FirewallState, args: &[String], position_index: usize) {
+    let position = args
+        .get(position_index)
+        .and_then(|n| n.parse::<u32>().ok())
+        .unwrap_or(1);
+    let Some(rule) = rule_from_args(args, position) else {
+        return;
+    };
+    let index = state
+        .rules
+        .iter()
+        .position(|r| r.number >= position)
+        .unwrap_or(state.rules.len());
+    state.rules.insert(index, rule);
+    renumber(state);
+}
+
+/**
  * Rewrites rule numbers so they run 1..=n in list order.
  *
  * # Arguments
@@ -580,9 +636,10 @@ fn renumber(state: &mut FirewallState) {
  * Best-effort reconstruction of a rule from a `ufw` argument vector, good enough
  * for a demo.
  *
- * Understands both the long form (`allow in on eno1 proto tcp from ... port 22`)
- * and the simple form (`allow 22/tcp`, `allow OpenSSH`). Unparseable tokens are
- * skipped rather than rejected.
+ * Understands both the long form (`allow in on eno1 proto tcp from ... port 22`) and
+ * the simple form (`allow 22/tcp`, `allow OpenSSH`), as well as the routing form
+ * (`route allow in on eth0 out on eth1`), which becomes a forwarding rule carrying
+ * both interfaces. Unparseable tokens are skipped rather than rejected.
  *
  * # Arguments
  *
@@ -606,7 +663,12 @@ pub fn rule_from_args(args: &[String], number: u32) -> Option<Rule> {
     };
     let rest = &args[action_index + 1..];
 
-    let direction = if rest.first().map(String::as_str) == Some("out") {
+    // `ufw route …` is the forwarding form; the `in`/`out` tokens then describe interfaces
+    // rather than the rule's direction.
+    let is_route = args.first().map(String::as_str) == Some("route");
+    let direction = if is_route {
+        Direction::Forward
+    } else if rest.first().map(String::as_str) == Some("out") {
         Direction::Out
     } else {
         Direction::In
@@ -618,13 +680,27 @@ pub fn rule_from_args(args: &[String], number: u32) -> Option<Rule> {
         ..Default::default()
     };
 
+    // Which side the next `on <interface>` clause belongs to: `true` for the interface
+    // traffic arrives on, `false` for the one it leaves through.
+    let mut incoming_interface = true;
     let mut index = 0;
     while index < rest.len() {
         match rest[index].as_str() {
-            "in" | "out" => index += 1,
+            "in" => {
+                incoming_interface = true;
+                index += 1;
+            }
+            "out" => {
+                incoming_interface = false;
+                index += 1;
+            }
             "on" => {
                 if let Some(iface) = rest.get(index + 1) {
-                    draft.interface_in = Some(iface.clone());
+                    if incoming_interface {
+                        draft.interface_in = Some(iface.clone());
+                    } else {
+                        draft.interface_out = Some(iface.clone());
+                    }
                 }
                 index += 2;
             }
@@ -701,6 +777,21 @@ pub fn rule_from_args(args: &[String], number: u32) -> Option<Rule> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /**
+     * Converts a slice of string literals into an owned argument vector.
+     *
+     * # Arguments
+     *
+     * * `args` (`&[&str]`) - The arguments to copy.
+     *
+     * # Returns
+     *
+     * `Vec<String>` - The same arguments as owned strings.
+     */
+    fn argv(args: &[&str]) -> Vec<String> {
+        args.iter().map(|s| s.to_string()).collect()
+    }
 
     #[test]
     /**
@@ -807,6 +898,83 @@ mod tests {
                 crate::core::rule::PortRange::single(443)
             ])
         );
+    }
+
+    #[test]
+    /**
+     * Verifies that a `route` command appends a forwarding rule with both
+     * interfaces.
+     *
+     * # Arguments
+     *
+     * This function takes no arguments.
+     *
+     * # Returns
+     *
+     * `()` - This function returns no value; it asserts and panics on failure.
+     */
+    fn adding_a_forward_rule_appends_it() {
+        let backend = MockBackend::new();
+        let args = argv(&["route", "allow", "in", "on", "wg0", "out", "on", "eth0"]);
+        backend.run(&args).unwrap();
+        let state = backend.read_state().unwrap();
+        assert_eq!(state.rules.len(), 7);
+        let added = &state.rules[6];
+        assert_eq!(added.direction, Direction::Forward);
+        assert!(added.is_route());
+        assert_eq!(added.interface_in.as_deref(), Some("wg0"));
+        assert_eq!(added.interface_out.as_deref(), Some("eth0"));
+    }
+
+    #[test]
+    /**
+     * Verifies that `route insert NUM` places a forwarding rule at that position.
+     *
+     * # Arguments
+     *
+     * This function takes no arguments.
+     *
+     * # Returns
+     *
+     * `()` - This function returns no value; it asserts and panics on failure.
+     */
+    fn inserting_a_forward_rule_places_it_at_the_position() {
+        let backend = MockBackend::new();
+        let args = argv(&[
+            "route", "insert", "2", "deny", "in", "on", "wg0", "out", "on", "eth0",
+        ]);
+        backend.run(&args).unwrap();
+        let state = backend.read_state().unwrap();
+        assert_eq!(state.rules.len(), 7);
+        let inserted = &state.rules[1];
+        assert_eq!(inserted.number, 2);
+        assert_eq!(inserted.action, Action::Deny);
+        assert_eq!(inserted.direction, Direction::Forward);
+    }
+
+    #[test]
+    /**
+     * Verifies that `route delete <rule>` removes the matching forwarding rule.
+     *
+     * # Arguments
+     *
+     * This function takes no arguments.
+     *
+     * # Returns
+     *
+     * `()` - This function returns no value; it asserts and panics on failure.
+     */
+    fn deleting_a_forward_rule_by_specification() {
+        let backend = MockBackend::new();
+        // The demo's rule 6 is `Anywhere on wg0  ALLOW FWD  Anywhere`.
+        let args = argv(&["route", "delete", "allow", "out", "on", "wg0"]);
+        backend.run(&args).unwrap();
+        let state = backend.read_state().unwrap();
+        assert_eq!(state.rules.len(), 5);
+        assert!(state
+            .rules
+            .iter()
+            .all(|rule| rule.direction != Direction::Forward));
     }
 
     #[test]

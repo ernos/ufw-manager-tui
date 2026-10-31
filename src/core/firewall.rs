@@ -167,6 +167,29 @@ impl RoutedPolicy {
     }
 
     /**
+     * Returns the routed policy as a plain [`Policy`].
+     *
+     * `Disabled` has no equivalent policy — with kernel forwarding off, ufw's routing
+     * chains never see a packet — so it maps to `Deny`, which is what a forwarded
+     * packet effectively runs into.
+     *
+     * # Arguments
+     *
+     * * `self` (`RoutedPolicy`) - The routed policy being converted.
+     *
+     * # Returns
+     *
+     * A `Policy` holding `Allow`, `Deny` or `Reject`.
+     */
+    pub fn policy(self) -> Policy {
+        match self {
+            RoutedPolicy::Allow => Policy::Allow,
+            RoutedPolicy::Deny | RoutedPolicy::Disabled => Policy::Deny,
+            RoutedPolicy::Reject => Policy::Reject,
+        }
+    }
+
+    /**
      * Parses a routed policy from a status word.
      *
      * # Arguments

@@ -8,7 +8,7 @@ use ipnet::IpNet;
 use crate::core::command::{change_add, change_enabled, change_policy, change_reset, Change};
 use crate::core::firewall::Policy;
 use crate::core::risk::RiskLevel;
-use crate::core::rule::{Action, PortSpec, Protocol, RuleDraft};
+use crate::core::rule::{Action, Direction, PortSpec, Protocol, RuleDraft};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 /**
@@ -102,6 +102,7 @@ impl Default for PresetContext {
  * * `BlockAddress(String)` - Deny all traffic from the given address.
  * * `Minimal` - Deny incoming and allow outgoing.
  * * `AllowInterface(String)` - Allow all traffic arriving on the given interface.
+ * * `ForwardTunnel(String)` - Forward traffic arriving on the given tunnel to the local network.
  * * `CustomService { port: u16, protocol: Protocol }` - Allow one port and protocol.
  * * `ResetToDefaults` - Turn the firewall off and delete every rule.
  */
@@ -113,6 +114,7 @@ pub enum Preset {
     BlockAddress(String),
     Minimal,
     AllowInterface(String),
+    ForwardTunnel(String),
     CustomService { port: u16, protocol: Protocol },
     ResetToDefaults,
 }
@@ -160,6 +162,9 @@ impl Preset {
             Preset::BlockAddress(_) => "Block a specific address".into(),
             Preset::Minimal => "Minimal exposure (laptop on public Wi-Fi)".into(),
             Preset::AllowInterface(iface) => format!("Let traffic in on {iface}"),
+            Preset::ForwardTunnel(iface) => {
+                format!("Forward traffic from {iface} to my own network")
+            }
             Preset::CustomService { port, protocol } => {
                 format!("Open {protocol} port {port}")
             }
@@ -197,6 +202,9 @@ impl Preset {
             Preset::AllowInterface(_) => {
                 "Allows all traffic arriving on that interface, for example a VPN tunnel.".into()
             }
+            Preset::ForwardTunnel(_) => {
+                "Routes traffic that arrives on that tunnel out to your local network, so the tunnel can reach the machines behind this one.".into()
+            }
             Preset::CustomService { .. } => "Allows that port from anywhere.".into(),
             Preset::ResetToDefaults => {
                 "Turns the firewall off and deletes every rule. This cannot be undone.".into()
@@ -221,7 +229,7 @@ impl Preset {
             Preset::Minimal | Preset::TurnOnSafely => RiskLevel::Low,
             Preset::RestrictSshToLan => RiskLevel::Low,
             Preset::RateLimitSsh => RiskLevel::Low,
-            Preset::AllowInterface(_) => RiskLevel::Medium,
+            Preset::AllowInterface(_) | Preset::ForwardTunnel(_) => RiskLevel::Medium,
             Preset::WebServer | Preset::CustomService { .. } => RiskLevel::High,
             Preset::BlockAddress(_) => RiskLevel::Info,
         }
@@ -317,6 +325,26 @@ impl Preset {
                 };
                 Ok(vec![change_add(&draft)?])
             }
+            Preset::ForwardTunnel(iface) => {
+                let lan = ctx.lan.as_ref().ok_or(
+                    "Could not work out which network you are on, so there is no destination to forward to.",
+                )?;
+                if *iface == lan.iface {
+                    return Err(
+                        "That interface already carries your local network, so there is nothing to route between."
+                            .to_string(),
+                    );
+                }
+                let draft = RuleDraft {
+                    direction: Direction::Forward,
+                    interface_in: Some(iface.clone()),
+                    interface_out: Some(lan.iface.clone()),
+                    to_addr: Some(lan.cidr()),
+                    comment: Some(format!("ufw-manager-tui: {iface} to LAN")),
+                    ..Default::default()
+                };
+                Ok(vec![change_add(&draft)?])
+            }
             Preset::CustomService { port, protocol } => {
                 let draft = RuleDraft::allow_port(*protocol, *port)
                     .with_comment(format!("ufw-manager-tui: {protocol} {port}"));
@@ -397,6 +425,7 @@ pub fn library(ctx: &PresetContext) -> Vec<PresetCard> {
             || iface.starts_with("tailscale")
         {
             presets.push(Preset::AllowInterface(iface.clone()));
+            presets.push(Preset::ForwardTunnel(iface.clone()));
         }
     }
     presets.push(Preset::ResetToDefaults);
@@ -614,6 +643,64 @@ mod tests {
         assert!(!cards
             .iter()
             .any(|c| matches!(&c.preset, Preset::AllowInterface(i) if i == "eno1")));
+    }
+
+    #[test]
+    /**
+     * Verifies that the forwarding preset routes the tunnel to the local network.
+     *
+     * # Arguments
+     *
+     * This function takes no arguments.
+     *
+     * # Returns
+     *
+     * This function returns no value; it asserts the expected behavior.
+     */
+    fn the_forwarding_preset_builds_a_route_rule() {
+        let ctx = ctx_with_lan();
+        let changes = Preset::ForwardTunnel("wg0".into()).changes(&ctx).unwrap();
+        assert_eq!(changes.len(), 1);
+        let args = &changes[0].steps[0];
+        assert_eq!(args[0], "route");
+        assert_eq!(
+            args,
+            &vec![
+                "route",
+                "allow",
+                "in",
+                "on",
+                "wg0",
+                "out",
+                "on",
+                "eno1",
+                "from",
+                "any",
+                "to",
+                "192.168.1.0/24",
+                "comment",
+                "ufw-manager-tui: wg0 to LAN",
+            ]
+        );
+    }
+
+    #[test]
+    /**
+     * Verifies that the forwarding preset refuses the local network's own interface.
+     *
+     * # Arguments
+     *
+     * This function takes no arguments.
+     *
+     * # Returns
+     *
+     * This function returns no value; it asserts the expected behavior.
+     */
+    fn the_forwarding_preset_refuses_the_lan_interface() {
+        let error = Preset::ForwardTunnel("eno1".into())
+            .changes(&ctx_with_lan())
+            .unwrap_err();
+        assert!(error.contains("nothing to route between"));
     }
 
     #[test]

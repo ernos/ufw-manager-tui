@@ -60,9 +60,13 @@ fn action_label(rule: &crate::core::rule::Rule) -> String {
  * Formats the TO column of the rule table.
  *
  * When the rule targets a port, the port (with its protocol when one is set) is
- * shown; otherwise the destination address is shown, with the incoming
- * interface appended when the rule names one. An absent address renders as
- * `"Anywhere"`.
+ * shown; otherwise the destination address is shown, with the interface appended
+ * when the rule names one. An absent address renders as `"Anywhere"`.
+ *
+ * The interface shown is the one `ufw status` prints on that side: for filter
+ * rules the interface traffic arrives on, and for forwarding rules the one it
+ * leaves through, because a route rule is reported from the packet's point of
+ * view rather than the firewall's.
  *
  * # Arguments
  *
@@ -85,7 +89,11 @@ fn to_column(rule: &crate::core::rule::Rule) -> String {
         }
     };
     let addr = rule.to.addr.clone().unwrap_or_else(|| "Anywhere".into());
-    match (port.is_empty(), rule.interface_in.as_deref()) {
+    let iface = match rule.direction {
+        crate::core::rule::Direction::Forward => rule.interface_out.as_deref(),
+        _ => rule.interface_in.as_deref(),
+    };
+    match (port.is_empty(), iface) {
         (true, Some(iface)) => format!("{addr} on {iface}"),
         (true, None) => addr,
         (false, _) => port,
@@ -96,7 +104,9 @@ fn to_column(rule: &crate::core::rule::Rule) -> String {
  * Formats the FROM column of the rule table.
  *
  * Shows the source address, or `"Anywhere"` when the rule has no source
- * address, with the outgoing interface appended when the rule names one.
+ * address, with the interface `ufw status` prints on that side appended when the
+ * rule names one: the one traffic leaves through for filter rules, and the one it
+ * arrives on for forwarding rules.
  *
  * # Arguments
  *
@@ -108,7 +118,11 @@ fn to_column(rule: &crate::core::rule::Rule) -> String {
  */
 fn from_column(rule: &crate::core::rule::Rule) -> String {
     let addr = rule.from.addr.clone().unwrap_or_else(|| "Anywhere".into());
-    match rule.interface_out.as_deref() {
+    let iface = match rule.direction {
+        crate::core::rule::Direction::Forward => rule.interface_in.as_deref(),
+        _ => rule.interface_out.as_deref(),
+    };
+    match iface {
         Some(iface) => format!("{addr} on {iface}"),
         None => addr,
     }
@@ -328,6 +342,7 @@ fn draw_detail(frame: &mut Frame, area: Rect, app: &App) {
 
 #[cfg(test)]
 mod tests {
+    use super::*;
     use crate::app::Tab;
     use crate::ui::render_to_string as render;
     use crate::ui::tests::demo_app;
@@ -452,5 +467,44 @@ mod tests {
         app.tab = Tab::Rules;
         let _ = render(&app, 40, 12);
         let _ = render(&app, 200, 60);
+    }
+
+    #[test]
+    /**
+     * Checks that a forwarding rule is shown the way `ufw` prints it.
+     *
+     * For route rules the To column carries the outgoing interface and the From
+     * column the incoming one, because ufw reports them from the packet's point
+     * of view rather than the firewall's.
+     *
+     * # Arguments
+     *
+     * This function takes no arguments.
+     *
+     * # Returns
+     *
+     * This function returns no value; it fails the test on a wrong column.
+     */
+    fn forwarding_rules_show_ufws_own_interface_columns() {
+        use crate::core::rule::{Action, Direction, Endpoint, LogMode, PortSpec, Protocol};
+
+        let rule = crate::core::rule::Rule {
+            number: 6,
+            action: Action::Allow,
+            direction: Direction::Forward,
+            interface_in: Some("eth0".into()),
+            interface_out: Some("eth1".into()),
+            protocol: Protocol::Any,
+            from: Endpoint::from_addr("192.168.0.0/16"),
+            to: Endpoint::any(),
+            log: LogMode::None,
+            comment: None,
+            v6: false,
+            route: true,
+        };
+        assert_eq!(to_column(&rule), "Anywhere on eth1");
+        assert_eq!(from_column(&rule), "192.168.0.0/16 on eth0");
+        assert_eq!(action_label(&rule), "ALLOW FWD");
+        assert_eq!(PortSpec::Any, rule.to.port);
     }
 }

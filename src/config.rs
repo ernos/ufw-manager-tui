@@ -138,6 +138,7 @@ impl RuleDefaults {
             action: Action::from_label(&self.action).unwrap_or(Action::Allow),
             direction: Direction::from_label(&self.direction).unwrap_or(Direction::In),
             interface_in: empty_to_none(&self.interface),
+            interface_out: None,
             protocol: self.protocol.parse().unwrap_or(Protocol::Any),
             from_addr: empty_to_none(&self.from_addr),
             from_port: Default::default(),
