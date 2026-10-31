@@ -1,5 +1,11 @@
 # Testing
 
+## Index
+
+- [Automated](#automated)
+- [Manual (needs a VM with ufw and an SSH session)](#manual-needs-a-vm-with-ufw-and-an-ssh-session)
+- [Snapshot-style review](#snapshot-style-review)
+
 ## Automated
 
 ```sh

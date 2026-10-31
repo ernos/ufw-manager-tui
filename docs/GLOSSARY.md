@@ -3,6 +3,22 @@
 This is the same text the in-app Help tab shows. It exists as a file so it can be read, reviewed and
 corrected on its own.
 
+## Index
+
+- [port](#port)
+- [ALLOW, DENY, REJECT, LIMIT](#allow-deny-reject-limit)
+- [IN and OUT](#in-and-out)
+- [Anywhere](#anywhere)
+- [192.168.0.0/24](#1921680024)
+- [interface](#interface)
+- [rule order](#rule-order)
+- [default policy](#default-policy)
+- [application profile](#application-profile)
+- [log level](#log-level)
+- [established connection](#established-connection)
+- [loopback](#loopback)
+- [lockout](#lockout)
+
 ## port
 
 A numbered door into a computer. A service listens on a port and other machines connect to it.

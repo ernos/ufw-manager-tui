@@ -2,6 +2,17 @@
 
 # CHANGELOG
 
+## Index
+
+- [Unreleased](#unreleased)
+- [Version 0.1.8](#version-018)
+- [Version 0.1.7](#version-017)
+- [Version 0.1.5](#version-015)
+- [Version 0.1.4](#version-014)
+- [Version 0.1.3](#version-013)
+- [Version 0.1.1](#version-011)
+- [Version 0.1.0](#version-010)
+
 ## Unreleased
 
 - Moving a rule is now `CTRL+↑` / `CTRL+↓` instead of `x`: the selection moves one position up or down the evaluation order, and a rule already at the top or bottom is reported instead of being deleted and re-added in place.

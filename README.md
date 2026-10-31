@@ -8,7 +8,7 @@ lock themselves out of their own machine.
 It never invents its own firewall: `ufw` stays the single source of truth. ufw-manager-tui reads it, explains
 it, and only ever writes through it.
 
-## Appendix
+## Index
 
 - [1. Why this exists](#1-why-this-exists)
 - [2. Installation](#2-installation)
@@ -33,6 +33,7 @@ it, and only ever writes through it.
 - [12. Honest limitations](#12-honest-limitations)
 - [13. Development](#13-development)
 - [14. Licence](#14-licence)
+- [15. License and contact](#15-license-and-contact)
 
 ## 1. Why this exists
 
