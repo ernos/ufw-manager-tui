@@ -7,6 +7,7 @@ pub mod command;
 pub mod explain;
 pub mod firewall;
 pub mod lockout;
+pub mod parked;
 pub mod parse;
 pub mod presets;
 pub mod risk;

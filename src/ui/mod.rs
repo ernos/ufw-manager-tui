@@ -506,6 +506,11 @@ fn modal_title(pending: &crate::core::lockout::PendingChange) -> String {
             Some(number) => format!("Confirm: delete rule #{number}"),
             None => "Confirm: delete this rule".to_string(),
         },
+        ChangeKind::ParkRule => match rule {
+            Some(number) => format!("Confirm: comment out rule #{number}"),
+            None => "Confirm: comment out this rule".to_string(),
+        },
+        ChangeKind::UnparkRule => "Confirm: put the rule back".to_string(),
         ChangeKind::EditRule => match rule {
             Some(number) => format!("Confirm: change rule #{number}"),
             None => "Confirm: change this rule".to_string(),
@@ -712,6 +717,7 @@ pub(crate) mod tests {
             Box::new(MockBackend::new()),
             crate::app::AppOptions {
                 journal_path: None,
+                parked_path: None,
                 yes: false,
                 readonly: false,
                 theme: Theme::new("dark", false),

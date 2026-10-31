@@ -312,8 +312,8 @@ single keypress.
   #1  Allow anyone on the internet to connect to TCP port 22 (SSH) on this machine.
       ufw allow 22/tcp
 
-  ↑↓ move   ←→ pane   ENTER details   e edit   a add   d delete   y duplicate
-  / filter   CTRL+↑↓ move rule   t test this rule   r refresh   u undo
+  ↑↓ move   ←→ pane   ENTER details   e edit   a add   d delete   s comment out
+  y duplicate   / filter   CTRL+↑↓ move rule   t test this rule   ? help   q quit
 ```
 
 - Row numbers are **ufw's own rule numbers**, so they match `ufw status numbered` and the reference docs.
@@ -326,6 +326,12 @@ single keypress.
 - Route (`FWD`) rules are shown, created, edited and deleted like any other rule; the detail pane rebuilds
   them as `ufw route …` commands, and an edit is a `delete N` followed by `ufw route insert N …`.
 - `/` opens an incremental filter (match action, port, address, app name, note).
+- `s` **comments the selected rule out**. `ufw` has no per-rule enable/disable, so the rule is deleted from
+  the ruleset and the whole rule — position, direction, interfaces, note and all — is kept in
+  `disabled-rules.json`. Commented-out rules are listed after the live ones, dimmed and marked
+  `commented out`, and pressing `s` on one puts it back at the position it occupied. `d` on a commented-out
+  rule forgets the stored copy, and the actions that need a rule `ufw` is enforcing say so instead of doing
+  nothing. The user never retypes a rule to switch it off and on again.
 - `CTRL+↑` / `CTRL+↓` move the selected rule one position earlier or later, implemented as `delete N` followed
   by `ufw insert N`, with an explicit note that reordering changes which rule wins.
 
@@ -751,7 +757,8 @@ drift. `↑↓←→` + `Enter` + `Esc` alone complete every task.
 |---|---|
 | `a` | Add (jump to wizard) |
 | `e` / `Enter` | Edit selected rule |
-| `d` | Delete selected rule |
+| `d` | Delete selected rule, or forget a commented-out one |
+| `s` | Comment the selected rule out, or put a commented-out rule back |
 | `y` | Duplicate selected rule |
 | `CTRL+↑` / `CTRL+↓` | Reorder: move the rule one position up/down |
 | `t` | Test traffic against this rule |
@@ -894,6 +901,8 @@ keymap = "default"
 ```
 
 `~/.local/state/ufw-manager-tui/journal.json` — undo stack + change history (session and cross-session).
+`~/.local/state/ufw-manager-tui/disabled-rules.json` — rules commented out with `s`, kept in full so they
+can be put back at their old position.
 `/var/backups/ufw-manager-tui/<ts>/` — emergency config copies (root only).
 `--config <path>` overrides for testing. `--demo` runs against `MockBackend` with a realistic sample ruleset
 so the app can be shown off, and screenshotted in CI, without root or risk.

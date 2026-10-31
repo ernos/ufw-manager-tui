@@ -32,6 +32,7 @@ fn app() -> App {
         Box::new(MockBackend::new()),
         AppOptions {
             journal_path: None,
+            parked_path: None,
             yes: false,
             readonly: false,
             theme: Theme::new("dark", false),
@@ -214,6 +215,41 @@ fn undo_puts_the_rule_set_back_and_pops_the_journal() {
 
 #[test]
 /**
+ * Verifies that undoing a commented-out rule puts it back and stops offering to
+ * restore it.
+ *
+ * # Arguments
+ *
+ * This function takes no arguments.
+ *
+ * # Returns
+ *
+ * `()` - This function returns no value.
+ *
+ * # Panics
+ *
+ * Panics if the rule is not restored or the stored copy survives the undo.
+ */
+fn undoing_a_commented_out_rule_also_forgets_the_stored_copy() {
+    let mut app = app();
+    app.tab = Tab::Rules;
+    let before = app.state.rules.len();
+    app.rules_cursor = 3;
+    press(&mut app, KeyCode::Char('s'));
+    assert_eq!(app.state.rules.len(), before - 1);
+    assert_eq!(app.parked.len(), 1);
+
+    app.undo();
+
+    assert_eq!(app.state.rules.len(), before, "the rule must come back");
+    assert!(
+        app.parked.is_empty(),
+        "a rule ufw enforces again must not stay commented out"
+    );
+}
+
+#[test]
+/**
  * Verifies that Ctrl+Up moves the selected rule one position earlier.
  *
  * Rule #4 is the deny rule; moving it up swaps it with rule #3.
@@ -365,6 +401,135 @@ fn deleting_a_rule_reduces_the_list() {
 
     assert_eq!(app.state.rules.len(), before - 1);
     assert!(app.journal.len() == 1);
+}
+
+#[test]
+/**
+ * Verifies that `s` comments a rule out and that pressing it again puts the very
+ * same rule back where it was.
+ *
+ * # Arguments
+ *
+ * This function takes no arguments.
+ *
+ * # Returns
+ *
+ * `()` - This function returns no value.
+ *
+ * # Panics
+ *
+ * Panics if the rule set or the commented-out list is not updated as expected.
+ */
+fn commenting_a_rule_out_can_be_undone_with_the_same_key() {
+    let mut app = app();
+    app.tab = Tab::Rules;
+    let before = app.state.rules.len();
+
+    // Rule #4 is the deny rule, which nothing depends on.
+    app.rules_cursor = 3;
+    let original = app.selected_rule().expect("rule #4 is selected");
+    press(&mut app, KeyCode::Char('s'));
+
+    assert_eq!(app.state.rules.len(), before - 1, "the rule must leave ufw");
+    assert_eq!(app.parked.len(), 1, "the rule must be remembered");
+    assert_eq!(app.parked.entries()[0].position, original.number);
+    assert!(app.parked.entries()[0].signature() == original.signature());
+
+    // The commented-out rule is listed after the live ones, so it is the last row.
+    app.rules_cursor = app.rules_row_count() - 1;
+    assert!(
+        app.selected_parked().is_some(),
+        "the last row is the parked one"
+    );
+    press(&mut app, KeyCode::Char('s'));
+
+    assert_eq!(app.state.rules.len(), before, "the rule must come back");
+    assert!(app.parked.is_empty(), "nothing should stay commented out");
+    assert_eq!(app.state.rules[3].number, 4, "it returns to position 4");
+    assert!(app.state.rules[3].signature() == original.signature());
+}
+
+#[test]
+/**
+ * Verifies that deleting a commented-out rule forgets it instead of touching the
+ * firewall, and that rule actions explain why they do nothing.
+ *
+ * # Arguments
+ *
+ * This function takes no arguments.
+ *
+ * # Returns
+ *
+ * `()` - This function returns no value.
+ *
+ * # Panics
+ *
+ * Panics if the stored copy survives or the wrong message is shown.
+ */
+fn a_commented_out_rule_can_be_forgotten_and_explains_itself() {
+    let mut app = app();
+    app.tab = Tab::Rules;
+    app.rules_cursor = 3;
+    press(&mut app, KeyCode::Char('s'));
+    let live = app.state.rules.len();
+
+    app.rules_cursor = app.rules_row_count() - 1;
+    press(&mut app, KeyCode::Char('e'));
+    assert_eq!(app.tab, Tab::Rules, "a commented-out rule cannot be edited");
+    let status = app.status.as_ref().expect("a status message is set");
+    assert!(status.text.contains("commented out"), "{}", status.text);
+
+    app.rules_cursor = app.rules_row_count() - 1;
+    press(&mut app, KeyCode::Char('d'));
+    assert!(app.parked.is_empty(), "d forgets the stored copy");
+    assert_eq!(app.state.rules.len(), live, "the firewall is untouched");
+}
+
+#[test]
+/**
+ * Verifies that commented-out rules are written to disk and read back on the next
+ * start, so quitting the app does not lose them.
+ *
+ * # Arguments
+ *
+ * This function takes no arguments.
+ *
+ * # Returns
+ *
+ * `()` - This function returns no value.
+ *
+ * # Panics
+ *
+ * Panics if the file is not written or the rule is not remembered.
+ */
+fn commented_out_rules_survive_a_restart() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("disabled-rules.json");
+    let options = |path: Option<std::path::PathBuf>| AppOptions {
+        journal_path: None,
+        parked_path: path,
+        yes: false,
+        readonly: false,
+        theme: Theme::new("dark", false),
+        reconcile_seconds: 0,
+        show_counters: true,
+        confirm_before_apply: false,
+        config: Config::default(),
+        config_path: None,
+    };
+
+    let mut app = App::new(Box::new(MockBackend::new()), options(Some(path.clone())));
+    app.tab = Tab::Rules;
+    app.rules_cursor = 3;
+    press(&mut app, KeyCode::Char('s'));
+    assert!(path.exists(), "the commented-out rule must be written");
+
+    let reopened = App::new(Box::new(MockBackend::new()), options(Some(path)));
+    assert_eq!(reopened.parked.len(), 1, "the rule must be remembered");
+    assert_eq!(reopened.parked.entries()[0].position, 4);
+    // A fresh mock backend still has all six rules, so the reopened app lists those plus the
+    // remembered one.
+    assert_eq!(reopened.rules_row_count(), 7, "six live rules plus one");
 }
 
 #[test]
@@ -586,6 +751,7 @@ fn read_only_mode_refuses_to_write() {
         Box::new(MockBackend::new()),
         AppOptions {
             journal_path: None,
+            parked_path: None,
             yes: false,
             readonly: true,
             theme: Theme::new("dark", false),
@@ -950,6 +1116,7 @@ fn app_with_confirmation() -> App {
         Box::new(MockBackend::new()),
         AppOptions {
             journal_path: None,
+            parked_path: None,
             yes: false,
             readonly: false,
             theme: Theme::new("dark", false),
@@ -1070,6 +1237,55 @@ fn escaping_the_confirmation_dialog_cancels_the_change() {
 
 #[test]
 /**
+ * Verifies that commenting a rule out is confirmed first, that the dialog says
+ * so in words, and that cancelling it leaves the rule live and nothing
+ * commented out.
+ *
+ * # Arguments
+ *
+ * This function takes no arguments.
+ *
+ * # Returns
+ *
+ * `()` - This function returns no value.
+ *
+ * # Panics
+ *
+ * Panics if the dialog is missing, its wording is wrong, cancelling changes
+ * anything, or confirming does not park the rule.
+ */
+fn commenting_a_rule_out_is_confirmed_and_can_be_cancelled() {
+    let mut app = app_with_confirmation();
+    app.tab = Tab::Rules;
+    let before = app.state.rules.len();
+    app.rules_cursor = 3;
+
+    press(&mut app, KeyCode::Char('s'));
+    assert!(app.modal.is_some(), "a confirmation must be shown");
+    let rendered = ufw_manager::ui::render_dialog_for_test(&app);
+    assert!(rendered.contains("comment out rule #4"), "{rendered}");
+    assert!(
+        rendered.contains("Comment out the rule that says"),
+        "{rendered}"
+    );
+
+    press(&mut app, KeyCode::Esc);
+    assert!(app.modal.is_none());
+    assert_eq!(
+        app.state.rules.len(),
+        before,
+        "cancelling must change nothing"
+    );
+    assert!(app.parked.is_empty());
+
+    press(&mut app, KeyCode::Char('s'));
+    press(&mut app, KeyCode::Enter);
+    assert_eq!(app.state.rules.len(), before - 1);
+    assert_eq!(app.parked.len(), 1);
+}
+
+#[test]
+/**
  * Verifies that a reset is refused by the lockout guard even when confirmation
  * before apply is enabled, leaving the rule set and journal untouched.
  *
@@ -1135,6 +1351,7 @@ fn x_asks_for_privileges_when_it_can_and_explains_when_it_cannot() {
         Box::new(ReadOnlyBackend),
         AppOptions {
             journal_path: None,
+            parked_path: None,
             yes: false,
             readonly: true,
             theme: Theme::new("dark", false),
@@ -1159,6 +1376,7 @@ fn x_asks_for_privileges_when_it_can_and_explains_when_it_cannot() {
         Box::new(EscalatableBackend),
         AppOptions {
             journal_path: None,
+            parked_path: None,
             yes: false,
             readonly: false,
             theme: Theme::new("dark", false),

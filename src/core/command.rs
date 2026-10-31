@@ -501,6 +501,81 @@ pub fn change_duplicate(rule: &Rule, existing: usize) -> Result<Change, String> 
 }
 
 /**
+ * Builds the change that comments a rule out.
+ *
+ * `ufw` has no per-rule enable/disable, so commenting a rule out deletes it. The rule itself is
+ * kept in [`crate::core::parked::ParkedRules`], which is what the inverse re-inserts, so nothing is
+ * lost: the rule can be put back at exactly the position it occupied.
+ *
+ * # Arguments
+ *
+ * * `rule` (`&Rule`) - The rule to comment out.
+ * * `existing` (`usize`) - The number of rules currently listed, including this one.
+ *
+ * # Returns
+ *
+ * `Result<Change, String>` - The change on success, or an error when the rule cannot be rebuilt
+ * as an insert command.
+ */
+pub fn change_park(rule: &Rule, existing: usize) -> Result<Change, String> {
+    let draft = rule.to_draft();
+    Ok(Change {
+        description: format!(
+            "Comment out rule #{}: {}",
+            rule.number,
+            crate::core::explain::explain_rule(rule)
+        ),
+        steps: vec![delete_by_number(rule.number)],
+        inverse: vec![insert_rule(
+            &draft,
+            rule.number,
+            remaining_after_delete(existing),
+        )?],
+    })
+}
+
+/**
+ * Builds the change that puts a commented-out rule back into the ruleset.
+ *
+ * The rule returns to the position it occupied when it was commented out, which is what keeps a
+ * disable/enable cycle from reordering the ruleset. A remembered position past the end of the list
+ * is emitted as a plain append, because `ufw insert` rejects positions the list does not have.
+ *
+ * # Arguments
+ *
+ * * `parked` (`&crate::core::parked::ParkedRule`) - The commented-out rule to restore.
+ * * `existing` (`usize`) - The number of rules currently listed.
+ *
+ * # Returns
+ *
+ * `Result<Change, String>` - The change on success, or an error when the rule cannot be rebuilt
+ * as an insert command.
+ */
+pub fn change_unpark(
+    parked: &crate::core::parked::ParkedRule,
+    existing: usize,
+) -> Result<Change, String> {
+    let draft = parked.to_draft();
+    let position = parked.position.max(1);
+    // An insert past the end is emitted as an append, so the rule lands on the last position
+    // rather than the remembered one.
+    let landing = if position as usize > existing {
+        existing as u32 + 1
+    } else {
+        position
+    };
+    Ok(Change {
+        description: format!(
+            "Put rule #{} back: {}",
+            landing,
+            crate::core::explain::explain_draft(&draft)
+        ),
+        steps: vec![insert_rule(&draft, position, existing)?],
+        inverse: vec![delete_by_number(landing)],
+    })
+}
+
+/**
  * Builds the change that moves a rule to another position.
  *
  * # Arguments
@@ -1281,6 +1356,110 @@ mod tests {
         };
         let change = change_delete(&rule, 1).unwrap();
         assert_eq!(change.inverse[0], argv(&["allow", "22/tcp"]));
+    }
+
+    #[test]
+    /**
+     * Verifies that commenting a rule out deletes it and that the inverse puts the
+     * very same rule back at the position it occupied.
+     *
+     * # Arguments
+     *
+     * This function takes no arguments.
+     *
+     * # Returns
+     *
+     * This function returns no value.
+     */
+    fn commenting_a_rule_out_can_be_reversed_at_the_same_position() {
+        let rule = Rule {
+            number: 4,
+            action: Action::Allow,
+            direction: Direction::In,
+            interface_in: None,
+            interface_out: None,
+            protocol: Protocol::Tcp,
+            from: Endpoint::from_addr("192.168.1.0/24"),
+            to: Endpoint::port(22),
+            log: LogMode::None,
+            comment: Some("SSH".into()),
+            v6: false,
+            route: false,
+        };
+        let change = change_park(&rule, 8).unwrap();
+        assert!(change.description.starts_with("Comment out rule #4"));
+        assert_eq!(change.steps, vec![argv(&["--force", "delete", "4"])]);
+        assert_eq!(change.inverse[0][0], "insert");
+        assert_eq!(change.inverse[0][1], "4");
+        assert!(change.inverse[0].contains(&"SSH".to_string()));
+    }
+
+    #[test]
+    /**
+     * Verifies that a commented-out rule is put back at its remembered position,
+     * and that the inverse deletes it from there again.
+     *
+     * # Arguments
+     *
+     * This function takes no arguments.
+     *
+     * # Returns
+     *
+     * This function returns no value.
+     */
+    fn enabling_a_commented_out_rule_inserts_it_at_its_remembered_position() {
+        let parked = crate::core::parked::ParkedRule::from_rule(&Rule {
+            number: 2,
+            action: Action::Allow,
+            direction: Direction::In,
+            interface_in: None,
+            interface_out: None,
+            protocol: Protocol::Tcp,
+            from: Endpoint::any(),
+            to: Endpoint::port(443),
+            log: LogMode::None,
+            comment: None,
+            v6: false,
+            route: false,
+        });
+        let change = change_unpark(&parked, 5).unwrap();
+        assert_eq!(change.steps[0][0], "insert");
+        assert_eq!(change.steps[0][1], "2");
+        assert_eq!(change.inverse, vec![argv(&["--force", "delete", "2"])]);
+    }
+
+    #[test]
+    /**
+     * Verifies that a remembered position past the end of the list appends the rule
+     * and that the inverse deletes it from where it landed.
+     *
+     * # Arguments
+     *
+     * This function takes no arguments.
+     *
+     * # Returns
+     *
+     * This function returns no value.
+     */
+    fn enabling_past_the_end_appends_and_deletes_where_the_rule_landed() {
+        let mut parked = crate::core::parked::ParkedRule::from_rule(&Rule {
+            number: 9,
+            action: Action::Deny,
+            direction: Direction::In,
+            interface_in: None,
+            interface_out: None,
+            protocol: Protocol::Tcp,
+            from: Endpoint::any(),
+            to: Endpoint::port(3306),
+            log: LogMode::None,
+            comment: None,
+            v6: false,
+            route: false,
+        });
+        parked.position = 9;
+        let change = change_unpark(&parked, 2).unwrap();
+        assert_eq!(change.steps[0], argv(&["deny", "3306/tcp"]));
+        assert_eq!(change.inverse, vec![argv(&["--force", "delete", "3"])]);
     }
 
     #[test]

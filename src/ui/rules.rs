@@ -133,7 +133,9 @@ fn from_column(rule: &crate::core::rule::Rule) -> String {
  *
  * Rows follow ufw's evaluation order and show the rule number and action, the
  * direction, the TO and FROM columns, the hit count, an ellipsized note and a
- * risk badge; rules that can never be reached are marked as such. The panel
+ * risk badge; rules that can never be reached are marked as such. Rules the user
+ * has commented out follow the live ones, dimmed and marked `commented out`,
+ * because they are remembered here but are not in ufw's ruleset. The panel
  * title reports the active filter and the number of visible rules, and the
  * selected row is highlighted. When nothing is visible an explanatory paragraph
  * is drawn instead, which mentions the root requirement when rules are hidden.
@@ -150,6 +152,7 @@ fn from_column(rule: &crate::core::rule::Rule) -> String {
  */
 fn draw_table(frame: &mut Frame, area: Rect, app: &App) {
     let visible = app.visible_rules();
+    let parked = app.visible_parked();
     let mut rows: Vec<Row> = Vec::new();
     let filter_text = app
         .filter
@@ -208,21 +211,53 @@ fn draw_table(frame: &mut Frame, area: Rect, app: &App) {
         rows.push(row);
     }
 
+    for (offset, entry) in parked.iter().enumerate() {
+        let selected = visible.len() + offset == app.rules_cursor;
+        let rule = entry.to_rule();
+        let note = util::ellipsize(entry.comment.as_deref().unwrap_or(""), 22);
+        // A commented-out rule is drawn entirely dimmed, with the RISK column saying why it is
+        // there: it is not in ufw's ruleset, so nothing it says can affect a packet.
+        let mut row = Row::new(vec![
+            Cell::from(format!("({}) {}", entry.position, action_label(&rule))),
+            Cell::from(rule.direction.label()),
+            Cell::from(to_column(&rule)),
+            Cell::from(from_column(&rule)),
+            Cell::from("—"),
+            Cell::from(note),
+            Cell::from(format!(
+                "{} commented out",
+                app.theme.badge(RiskLevel::Info)
+            )),
+        ])
+        .style(app.theme.dimmed());
+        if selected {
+            row = row.style(app.theme.selected());
+        }
+        rows.push(row);
+    }
+
     let header = Row::new(vec!["RULE", "DIR", "TO", "FROM", "HITS", "NOTE", "RISK"])
         .style(app.theme.dimmed().add_modifier(Modifier::BOLD));
 
-    let title = if let Some(filter) = &filter_text {
-        format!(" Rules matching “{filter}” ({}) ", visible.len())
+    let count = if parked.is_empty() {
+        visible.len().to_string()
     } else {
-        format!(" Rules in ufw's evaluation order ({}) ", visible.len())
+        format!("{} + {} commented out", visible.len(), parked.len())
+    };
+    let title = if let Some(filter) = &filter_text {
+        format!(" Rules matching “{filter}” ({count}) ")
+    } else {
+        format!(" Rules in ufw's evaluation order ({count}) ")
     };
     let block = app.theme.titled(&title);
 
     if rows.is_empty() {
-        let message = if app.state.rules_readable {
-            "  No rules yet. Press a to add one, or try the Presets tab."
-        } else {
+        let message = if !app.state.rules_readable {
             "  ufw only shows rules to root. Run `sudo ufw-manager-tui` to see them."
+        } else if filter_text.is_some() {
+            "  No rule matches this filter."
+        } else {
+            "  No rules yet. Press a to add one, or try the Presets tab."
         };
         frame.render_widget(
             Paragraph::new(Line::from(Span::styled(message, app.theme.dimmed()))).block(block),
@@ -254,7 +289,9 @@ fn draw_table(frame: &mut Frame, area: Rect, app: &App) {
  * Shows the rule number with its plain-English explanation, the `ufw` command
  * that would recreate it, the risk badge and summary, a warning when the rule is
  * shadowed by an earlier one, and the hit count when counters are enabled. A
- * prompt to select a rule is drawn when nothing is selected.
+ * commented-out rule is explained the same way, with a note that `ufw` does not
+ * have it and the key that puts it back. A prompt to select a rule is drawn when
+ * nothing is selected.
  *
  * # Arguments
  *
@@ -268,6 +305,39 @@ fn draw_table(frame: &mut Frame, area: Rect, app: &App) {
  */
 fn draw_detail(frame: &mut Frame, area: Rect, app: &App) {
     let block = app.theme.titled(" Why this rule says what it says ");
+
+    if let Some(parked) = app.selected_parked() {
+        let rule = parked.to_rule();
+        let lines = vec![
+            Line::from(vec![
+                Span::styled(format!("  ({})  ", rule.number), app.theme.dimmed()),
+                Span::styled(explain::explain_rule(&rule), app.theme.text_style()),
+            ]),
+            Line::from(Span::styled(
+                format!(
+                    "  {}",
+                    command::rule_args(&rule.to_draft(), true)
+                        .map(|args| command::render_command(&args))
+                        .unwrap_or_else(|error| format!("(cannot rebuild the command: {error})"))
+                ),
+                app.theme.title(),
+            )),
+            Line::from(Span::styled(
+                format!(
+                    "  commented out — ufw does not have this rule, so it matches nothing. Press s to put it back at position {}.",
+                    rule.number
+                ),
+                app.theme.risk_style(RiskLevel::Medium),
+            )),
+        ];
+        frame.render_widget(
+            Paragraph::new(lines)
+                .block(block)
+                .wrap(Wrap { trim: false }),
+            area,
+        );
+        return;
+    }
 
     let Some(rule) = app.selected_rule() else {
         frame.render_widget(
@@ -387,6 +457,37 @@ mod tests {
         app.rules_cursor = 0;
         let output = render(&app, 140, 40);
         assert!(output.contains("Allow anyone on the internet"), "{output}");
+    }
+
+    #[test]
+    /**
+     * Checks that a commented-out rule is still listed, marked as such, and
+     * explained with the key that puts it back.
+     *
+     * # Arguments
+     *
+     * This function takes no arguments.
+     *
+     * # Returns
+     *
+     * This function returns no value; it fails the test when the commented-out
+     * rule disappears from the list or is not explained.
+     */
+    fn a_commented_out_rule_is_listed_and_explained() {
+        use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+
+        let mut app = demo_app();
+        app.tab = Tab::Rules;
+        app.rules_cursor = 3;
+        let before = app.state.rules.len();
+        app.handle_key(KeyEvent::new(KeyCode::Char('s'), KeyModifiers::NONE));
+        assert_eq!(app.state.rules.len(), before - 1);
+
+        app.rules_cursor = app.rules_row_count() - 1;
+        let output = render(&app, 140, 40);
+        assert!(output.contains("commented out"), "{output}");
+        assert!(output.contains("Press s to put it back"), "{output}");
+        assert!(output.contains("keep mysql private"), "{output}");
     }
 
     #[test]

@@ -113,7 +113,7 @@ always shows the ones that apply right now.
 | `?` | Help and a plain-English glossary |
 | `q` | Quit |
 
-On the Rules tab: `a` add, `e` edit, `d` delete, `y` duplicate, `CTRL+↑`/`CTRL+↓` move, `t` test, `/` filter, `n` note.
+On the Rules tab: `a` add, `e` edit, `d` delete, `s` comment out / put back, `y` duplicate, `CTRL+↑`/`CTRL+↓` move, `t` test, `/` filter, `n` note.
 On the Activity tab: `SPACE` pause live updates, `B` block the selected source, `c` clear the view.
 
 ## 6. The tabs
@@ -210,7 +210,8 @@ ascii_fallback = false
 readonly = false
 ```
 
-The undo journal lives in `~/.local/state/ufw-manager-tui/journal.json`.
+The undo journal lives in `~/.local/state/ufw-manager-tui/journal.json`, and rules commented out with `s`
+are kept in `~/.local/state/ufw-manager-tui/disabled-rules.json` so they can be put back where they were.
 
 ## 11. What it deliberately does not do
 

@@ -56,10 +56,10 @@ const RULES_HINTS: &[Hint] = &[
     hint("a", "add"),
     hint("e", "edit"),
     hint("d", "delete"),
+    hint("s", "toggle"),
     hint("t", "test"),
-    hint("CTRL+↑↓", "move rule"),
+    hint("CTRL+↑↓", "move"),
     hint("/", "filter"),
-    hint("u", "undo"),
     hint("?", "help"),
 ];
 
@@ -174,7 +174,14 @@ pub const RULES: HelpSection = HelpSection {
     entries: &[
         ("a", "Add a rule (guided)"),
         ("e / ENTER", "Edit the selected rule"),
-        ("d", "Delete the selected rule"),
+        (
+            "d",
+            "Delete the selected rule, or forget a commented-out one",
+        ),
+        (
+            "s",
+            "Comment the selected rule out, or put a commented-out rule back",
+        ),
         ("y", "Duplicate the selected rule"),
         (
             "CTRL+↑ / CTRL+↓",
@@ -189,8 +196,7 @@ pub const RULES: HelpSection = HelpSection {
 pub const DIALOGS: HelpSection = HelpSection {
     title: "In a dialog",
     entries: &[
-        ("ENTER", "Apply"),
-        ("ESC", "Cancel"),
+        ("ENTER / ESC", "Apply / cancel"),
         ("D", "Show the output of `ufw --dry-run`"),
         ("Y", "Confirm you are still connected (watchdog)"),
     ],

@@ -82,6 +82,7 @@ fn main() -> Result<()> {
         backend,
         AppOptions {
             journal_path: ufw_manager::core::undo::default_path(),
+            parked_path: ufw_manager::core::parked::default_path(),
             yes: cli.yes,
             readonly: cli.readonly || config.readonly,
             theme,

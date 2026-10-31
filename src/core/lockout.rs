@@ -85,6 +85,8 @@ impl Session {
  *
  * * `AddRule` - A new rule is added.
  * * `DeleteRule` - An existing rule is deleted.
+ * * `ParkRule` - An existing rule is commented out, which deletes it from `ufw` but keeps a copy the user can put back.
+ * * `UnparkRule` - A commented-out rule is put back into the ruleset.
  * * `EditRule` - An existing rule is replaced.
  * * `MoveRule` - A rule is reordered.
  * * `Enable` - The firewall is turned on.
@@ -96,6 +98,8 @@ impl Session {
 pub enum ChangeKind {
     AddRule,
     DeleteRule,
+    ParkRule,
+    UnparkRule,
     EditRule,
     MoveRule,
     Enable,
@@ -263,6 +267,7 @@ pub fn check(session: &Session, pending: &PendingChange, state: &FirewallState) 
     // Everything outside the four dangerous operations is safe by construction.
     match pending.kind {
         ChangeKind::AddRule | ChangeKind::SetLogging | ChangeKind::MoveRule => GuardVerdict::Allow,
+        ChangeKind::UnparkRule => GuardVerdict::Allow,
         ChangeKind::Disable => GuardVerdict::Allow,
         ChangeKind::Reset => {
             if pending.forced {
@@ -293,13 +298,13 @@ pub fn check(session: &Session, pending: &PendingChange, state: &FirewallState) 
             "Changing the default policy reloads the firewall and drops existing connections, including yours. Your SSH rule (if any) keeps you able to reconnect."
                 .into(),
         ),
-        ChangeKind::DeleteRule => {
+        ChangeKind::DeleteRule | ChangeKind::ParkRule => {
             let Some(rule) = &pending.rule else {
                 return GuardVerdict::Allow;
             };
             if permits_session(session, rule) {
                 return GuardVerdict::Block(format!(
-                    "Rule #{} is the one keeping your SSH session open. Deleting it would lock you out. Restrict it to your local network instead of removing it.",
+                    "Rule #{} is the one keeping your SSH session open. Deleting it, or commenting it out, would lock you out. Restrict it to your local network instead of removing it.",
                     rule.number
                 ));
             }

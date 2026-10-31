@@ -13,8 +13,10 @@
 - [Version 0.1.1](#version-011)
 - [Version 0.1.0](#version-010)
 
-## Unreleased
+## Version 0.2.2
 
+- Rules can now be commented out instead of deleted: `s` on the Rules tab removes the selected rule from `ufw` and remembers the whole rule — position, interfaces, logging and note — in `disabled-rules.json`. Commented-out rules are listed below the live ones, dimmed and marked `commented out`; `s` on one puts it back at the position it occupied, and `d` forgets the stored copy. `e`, `t`, `n` and `CTRL+↑↓` on a commented-out rule explain why they do nothing instead of ignoring the key, and the lockout guard treats commenting a rule out exactly like deleting it.
+- The footer hint for a rule move is now `CTRL+↑↓ move`, and the Rules footer no longer repeats `u undo` (undo is global, and the Home footer still shows it) so `s toggle`, `? help` and `q quit` all fit on a 120-column terminal. The Help screen's dialog section documents `ENTER`/`ESC` on one line, so the whole key reference still fits on one 50-row screen.
 - Moving a rule is now `CTRL+↑` / `CTRL+↓` instead of `x`: the selection moves one position up or down the evaluation order, and a rule already at the top or bottom is reported instead of being deleted and re-added in place.
 - Forwarding (`FWD`) rules can now be created, edited and deleted. `RuleDraft` carries an outgoing interface, the command builder emits `ufw route …` (and `ufw route insert NUM …` when a rule is edited, moved or restored), and validation accepts forwarding rules instead of rejecting them. `ufw route delete NUM` is not valid, so deletion keeps using plain `ufw delete NUM`.
 - The wizard gained a "Forward traffic through this machine" goal, an "Out interface" row, and a direction that cycles in → out → forward. Presets offer "Forward traffic from <tunnel> to my own network" for detected `wg*`/`tun*`/`tap*`/`tailscale*` interfaces.

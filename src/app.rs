@@ -14,6 +14,7 @@ use crate::core::command::{self, Change};
 use crate::core::explain;
 use crate::core::firewall::{FirewallState, LogLevel, Policy};
 use crate::core::lockout::{self, ChangeKind, GuardVerdict, PendingChange, Session};
+use crate::core::parked::{ParkedRule, ParkedRules};
 use crate::core::parse::{parse_ufw_conf, AppProfile, Listening};
 use crate::core::presets::{self, LanInfo, PresetCard, PresetContext};
 use crate::core::risk::{self, Fix, Suggestion};
@@ -546,6 +547,7 @@ pub enum Escalation {
  * # Fields
  *
  * * `journal_path` (`Option<std::path::PathBuf>`) - Where the undo journal is stored; `None` keeps it in memory only.
+ * * `parked_path` (`Option<std::path::PathBuf>`) - Where commented-out rules are stored; `None` keeps them in memory only.
  * * `yes` (`bool`) - Skip the confirmation dialog.
  * * `readonly` (`bool`) - Refuse all writes.
  * * `theme` (`Theme`) - The colour theme to use.
@@ -558,6 +560,8 @@ pub enum Escalation {
 pub struct AppOptions {
     /// Where the undo journal lives. `None` keeps it in memory only, which is what tests want.
     pub journal_path: Option<std::path::PathBuf>,
+    /// Where the commented-out rules live. `None` keeps them in memory only, which is what tests want.
+    pub parked_path: Option<std::path::PathBuf>,
     pub yes: bool,
     pub readonly: bool,
     pub theme: Theme,
@@ -587,6 +591,8 @@ pub struct AppOptions {
  * * `blocks` (`BlockMonitor`) - The live blocked-traffic monitor.
  * * `journal` (`Journal`) - The undo journal.
  * * `journal_path` (`Option<std::path::PathBuf>`) - Where the journal is saved.
+ * * `parked` (`ParkedRules`) - The rules the user commented out.
+ * * `parked_path` (`Option<std::path::PathBuf>`) - Where the commented-out rules are saved.
  * * `suggestions` (`Vec<Suggestion>`) - Prioritized recommendations.
  * * `shadowed` (`Vec<(u32, u32)>`) - Rule pairs where one shadows another.
  * * `lan` (`Option<LanInfo>`) - The detected local network, if any.
@@ -636,6 +642,8 @@ pub struct App {
 
     pub journal: Journal,
     pub journal_path: Option<std::path::PathBuf>,
+    pub parked: ParkedRules,
+    pub parked_path: Option<std::path::PathBuf>,
     pub suggestions: Vec<Suggestion>,
     pub shadowed: Vec<(u32, u32)>,
     pub lan: Option<LanInfo>,
@@ -771,6 +779,11 @@ impl App {
             .as_deref()
             .map(Journal::load)
             .unwrap_or_default();
+        let parked = options
+            .parked_path
+            .as_deref()
+            .map(ParkedRules::load)
+            .unwrap_or_default();
 
         let mut app = Self {
             backend,
@@ -783,6 +796,8 @@ impl App {
             blocks: BlockMonitor::start(None),
             journal,
             journal_path: options.journal_path.clone(),
+            parked,
+            parked_path: options.parked_path.clone(),
             suggestions: Vec::new(),
             shadowed: Vec::new(),
             lan: None,
@@ -955,7 +970,7 @@ impl App {
      * This method returns no value.
      */
     fn clamp_cursors(&mut self) {
-        let rules = self.visible_rules().len();
+        let rules = self.rules_row_count();
         if rules == 0 {
             self.rules_cursor = 0;
         } else if self.rules_cursor >= rules {
@@ -1048,6 +1063,121 @@ impl App {
         self.visible_rules()
             .get(self.rules_cursor)
             .map(|rule| (*rule).clone())
+    }
+
+    /**
+     * Returns the commented-out rules that match the current filter.
+     *
+     * The same text as [`App::visible_rules`] is matched, plus the position the
+     * rule would return to, so filtering for a rule number finds it whether it is
+     * live or commented out.
+     *
+     * # Arguments
+     *
+     * * `&self` - The application state being read.
+     *
+     * # Returns
+     *
+     * `Vec<&ParkedRule>` - Borrowed references to the matching rules, in the order
+     * they were commented out.
+     */
+    pub fn visible_parked(&self) -> Vec<&ParkedRule> {
+        let needle = self
+            .filter
+            .as_ref()
+            .map(|input| input.value().trim().to_ascii_lowercase())
+            .unwrap_or_default();
+        self.parked
+            .entries()
+            .iter()
+            .filter(|entry| {
+                if needle.is_empty() {
+                    return true;
+                }
+                let haystack = format!(
+                    "{} {} {} {} {}",
+                    entry.position,
+                    entry.action.label(),
+                    explain::short_summary(&entry.to_rule()),
+                    entry.comment.as_deref().unwrap_or(""),
+                    entry.to.port
+                )
+                .to_ascii_lowercase();
+                haystack.contains(&needle)
+            })
+            .collect()
+    }
+
+    /**
+     * Returns the zero-based row count of the Rules tab.
+     *
+     * The Rules tab lists the live rules first and the commented-out ones after
+     * them, so the cursor moves over both.
+     *
+     * # Arguments
+     *
+     * * `&self` - The application state being read.
+     *
+     * # Returns
+     *
+     * A `usize` containing the number of live rules plus the number of
+     * commented-out rules the filter leaves visible.
+     */
+    pub fn rules_row_count(&self) -> usize {
+        self.visible_rules().len() + self.visible_parked().len()
+    }
+
+    /**
+     * Returns a copy of the commented-out rule under the rules cursor.
+     *
+     * # Arguments
+     *
+     * * `&self` - The application state being read.
+     *
+     * # Returns
+     *
+     * `Option<ParkedRule>` - A clone of the selected commented-out rule, or
+     * `None` when the cursor is on a live rule, the filtered list holds no
+     * commented-out rule, or the cursor is out of range.
+     */
+    pub fn selected_parked(&self) -> Option<ParkedRule> {
+        let live = self.visible_rules().len();
+        let index = self.rules_cursor.checked_sub(live)?;
+        self.visible_parked().get(index).map(|rule| (*rule).clone())
+    }
+
+    /**
+     * Returns the selected rule, explaining why nothing happens when it is
+     * commented out.
+     *
+     * Every rule action needs a rule that `ufw` is enforcing, so this is the guard
+     * they all go through: a commented-out rule sets an informative status instead
+     * of silently doing nothing.
+     *
+     * # Arguments
+     *
+     * * `&mut self` - The application state being read and, when the selection is
+     *   commented out, updated with the status message.
+     *
+     * # Returns
+     *
+     * `Option<Rule>` - A clone of the selected live rule, or `None` when there is
+     * no such rule.
+     */
+    fn live_rule(&mut self) -> Option<Rule> {
+        if let Some(rule) = self.selected_rule() {
+            return Some(rule);
+        }
+        if let Some(parked) = self.selected_parked() {
+            self.set_status(
+                StatusLevel::Info,
+                format!(
+                    "rule #{} is commented out — press s to put it back, or d to forget it",
+                    parked.position
+                ),
+            );
+        }
+        None
     }
 
     /**
@@ -1733,7 +1863,7 @@ impl App {
             | KeyCode::Char('j')
             | KeyCode::Home
             | KeyCode::End => {
-                let len = self.visible_rules().len();
+                let len = self.rules_row_count();
                 Self::move_cursor(&mut self.rules_cursor, key.code, len);
             }
             KeyCode::Char('a') => {
@@ -1741,6 +1871,7 @@ impl App {
             }
             KeyCode::Char('e') | KeyCode::Enter => self.start_edit(),
             KeyCode::Char('d') => self.delete_selected(),
+            KeyCode::Char('s') => self.toggle_selected(),
             KeyCode::Char('y') => self.duplicate_selected(),
             KeyCode::Char('t') => self.test_selected(),
             KeyCode::Char('/') => {
@@ -1851,7 +1982,7 @@ impl App {
      * This method returns no value.
      */
     pub fn start_edit(&mut self) {
-        let Some(rule) = self.selected_rule() else {
+        let Some(rule) = self.live_rule() else {
             return;
         };
         self.wizard = Wizard {
@@ -1871,7 +2002,11 @@ impl App {
     }
 
     /**
-     * Queues a change that deletes the selected rule.
+     * Queues a change that deletes the selected rule, or forgets a commented-out one.
+     *
+     * Deleting a live rule goes through `ufw`. Deleting a commented-out rule has
+     * nothing left to delete, so the stored copy is dropped instead: the rule is
+     * gone from `ufw` either way, and the app stops offering to put it back.
      *
      * A rule that cannot be turned into a delete command sets an error status
      * instead.
@@ -1885,7 +2020,11 @@ impl App {
      * This method returns no value.
      */
     fn delete_selected(&mut self) {
-        let Some(rule) = self.selected_rule() else {
+        if let Some(parked) = self.selected_parked() {
+            self.forget_parked(&parked);
+            return;
+        }
+        let Some(rule) = self.live_rule() else {
             return;
         };
         let change = match command::change_delete(&rule, self.state.rules.len()) {
@@ -1898,6 +2037,129 @@ impl App {
         let pending =
             PendingChange::new(ChangeKind::DeleteRule, change.description.clone()).with_rule(rule);
         self.submit(change, pending);
+    }
+
+    /**
+     * Handles the `s` key: comments the selected rule out, or puts it back.
+     *
+     * The two halves are exact inverses, so pressing `s` twice leaves the ruleset
+     * as it was, rule numbers included.
+     *
+     * # Arguments
+     *
+     * * `&mut self` - The application state being mutated.
+     *
+     * # Returns
+     *
+     * This method returns no value.
+     */
+    fn toggle_selected(&mut self) {
+        if let Some(parked) = self.selected_parked() {
+            self.enable_parked(&parked);
+        } else {
+            self.disable_selected();
+        }
+    }
+
+    /**
+     * Queues a change that comments the selected rule out.
+     *
+     * `ufw` has no per-rule enable/disable, so the rule is deleted from the
+     * ruleset and kept in [`App::parked`] instead. Nothing is lost: the rule can be
+     * put back at the position it occupied, and the comment survives because it is
+     * part of the stored copy.
+     *
+     * # Arguments
+     *
+     * * `&mut self` - The application state being mutated.
+     *
+     * # Returns
+     *
+     * This method returns no value.
+     */
+    fn disable_selected(&mut self) {
+        let Some(rule) = self.live_rule() else {
+            return;
+        };
+        let change = match command::change_park(&rule, self.state.rules.len()) {
+            Ok(change) => change,
+            Err(error) => {
+                self.set_status(StatusLevel::Error, error);
+                return;
+            }
+        };
+        let pending =
+            PendingChange::new(ChangeKind::ParkRule, change.description.clone()).with_rule(rule);
+        self.submit(change, pending);
+    }
+
+    /**
+     * Queues a change that puts a commented-out rule back into the ruleset.
+     *
+     * An identical rule that is already enforced is reported instead of added a
+     * second time, which is what would otherwise happen after undoing a
+     * commented-out rule.
+     *
+     * # Arguments
+     *
+     * * `&mut self` - The application state being mutated.
+     * * `parked` (`&ParkedRule`) - The commented-out rule to restore.
+     *
+     * # Returns
+     *
+     * This method returns no value.
+     */
+    fn enable_parked(&mut self, parked: &ParkedRule) {
+        let signature = parked.signature();
+        if let Some(existing) = self
+            .state
+            .rules
+            .iter()
+            .find(|rule| rule.signature() == signature)
+        {
+            self.set_status(
+                StatusLevel::Warn,
+                format!(
+                    "an identical rule is already active as rule #{} — press d to forget the commented-out copy",
+                    existing.number
+                ),
+            );
+            return;
+        }
+        let change = match command::change_unpark(parked, self.state.rules.len()) {
+            Ok(change) => change,
+            Err(error) => {
+                self.set_status(StatusLevel::Error, error);
+                return;
+            }
+        };
+        let pending = PendingChange::new(ChangeKind::UnparkRule, change.description.clone())
+            .with_rule(parked.to_rule())
+            .with_draft(parked.to_draft());
+        self.submit(change, pending);
+    }
+
+    /**
+     * Drops the stored copy of a commented-out rule without touching the firewall.
+     *
+     * # Arguments
+     *
+     * * `&mut self` - The application state being mutated.
+     * * `parked` (`&ParkedRule`) - The commented-out rule to forget.
+     *
+     * # Returns
+     *
+     * This method returns no value.
+     */
+    fn forget_parked(&mut self, parked: &ParkedRule) {
+        if self.parked.forget_signature(&parked.signature()) {
+            self.save_parked();
+            self.set_status(
+                StatusLevel::Good,
+                format!("rule #{} forgotten", parked.position),
+            );
+            self.clamp_cursors();
+        }
     }
 
     /**
@@ -1915,7 +2177,7 @@ impl App {
      * This method returns no value.
      */
     fn duplicate_selected(&mut self) {
-        let Some(rule) = self.selected_rule() else {
+        let Some(rule) = self.live_rule() else {
             return;
         };
         let draft = rule.to_draft();
@@ -1954,7 +2216,7 @@ impl App {
      * This method returns no value.
      */
     fn move_selected(&mut self, direction: MoveDirection) {
-        let Some(rule) = self.selected_rule() else {
+        let Some(rule) = self.live_rule() else {
             return;
         };
         let count = self.state.rules.len() as u32;
@@ -1993,7 +2255,7 @@ impl App {
      * This method returns no value.
      */
     fn edit_note(&mut self) {
-        let Some(rule) = self.selected_rule() else {
+        let Some(rule) = self.live_rule() else {
             return;
         };
         let mut input = TextInput::new(rule.comment.clone().unwrap_or_default());
@@ -2026,7 +2288,7 @@ impl App {
      * This method returns no value.
      */
     fn test_selected(&mut self) {
-        let Some(rule) = self.selected_rule() else {
+        let Some(rule) = self.live_rule() else {
             return;
         };
         let packet = packet_for_rule(&rule, self.ssh_port);
@@ -2062,7 +2324,7 @@ impl App {
      * This method returns no value.
      */
     fn show_rule_details(&mut self) {
-        let Some(rule) = self.selected_rule() else {
+        let Some(rule) = self.live_rule() else {
             return;
         };
         let assessment = self.risk_of(&rule);
@@ -3174,7 +3436,7 @@ impl App {
         }
 
         if !self.confirm_before_apply || self.yes {
-            self.apply(&change);
+            self.apply(&change, &pending);
             return;
         }
 
@@ -3231,6 +3493,8 @@ impl App {
      *
      * * `&mut self` - The application state being mutated.
      * * `change` (`&Change`) - The change whose steps are executed.
+     * * `pending` (`&PendingChange`) - The metadata that says whether the change
+     *   commented a rule out or put one back.
      *
      * # Returns
      *
@@ -3241,7 +3505,7 @@ impl App {
      * Journal save errors are ignored, and the watchdog is only spawned when the
      * session is over SSH and the change has an inverse.
      */
-    fn apply(&mut self, change: &Change) {
+    fn apply(&mut self, change: &Change, pending: &PendingChange) {
         let mut failures = Vec::new();
         for step in &change.steps {
             match self.backend.run(step) {
@@ -3269,6 +3533,7 @@ impl App {
         if let Some(path) = &self.journal_path {
             let _ = self.journal.save(path);
         }
+        self.record_parking(pending);
         self.refresh();
         self.set_status(StatusLevel::Good, format!("done: {}", change.description));
 
@@ -3288,6 +3553,95 @@ impl App {
 
         if !self.queue.is_empty() {
             self.next_in_queue();
+        }
+    }
+
+    /**
+     * Keeps the commented-out rules in step with a change that has just been applied.
+     *
+     * Commenting a rule out stores the rule that `ufw` no longer has; putting one
+     * back drops the stored copy. Other changes leave the store untouched.
+     *
+     * # Arguments
+     *
+     * * `&mut self` - The application state being mutated.
+     * * `pending` (`&PendingChange`) - The change that was applied.
+     *
+     * # Returns
+     *
+     * This method returns no value.
+     */
+    fn record_parking(&mut self, pending: &PendingChange) {
+        match pending.kind {
+            ChangeKind::ParkRule => {
+                if let Some(rule) = &pending.rule {
+                    self.parked.push(ParkedRule::from_rule(rule));
+                    self.save_parked();
+                }
+            }
+            ChangeKind::UnparkRule => {
+                if let Some(rule) = &pending.rule {
+                    if self.parked.forget_signature(&rule.signature()) {
+                        self.save_parked();
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+
+    /**
+     * Drops stored copies of rules that `ufw` is enforcing again.
+     *
+     * Undoing a commented-out rule puts the rule back without going through the
+     * normal enable path, so the store would otherwise keep offering to restore a
+     * rule that is already live.
+     *
+     * # Arguments
+     *
+     * * `&mut self` - The application state being mutated.
+     *
+     * # Returns
+     *
+     * This method returns no value.
+     */
+    fn reconcile_parked(&mut self) {
+        let live: Vec<String> = self
+            .state
+            .rules
+            .iter()
+            .map(|rule| rule.signature())
+            .collect();
+        let mut changed = false;
+        let mut index = 0;
+        while index < self.parked.len() {
+            if live.contains(&self.parked.entries()[index].signature()) {
+                self.parked.remove_at(index);
+                changed = true;
+            } else {
+                index += 1;
+            }
+        }
+        if changed {
+            self.save_parked();
+        }
+    }
+
+    /**
+     * Writes the commented-out rules to disk when a path is configured.
+     *
+     * # Arguments
+     *
+     * * `&mut self` - The application state being saved; it is only read.
+     *
+     * # Returns
+     *
+     * This method returns no value; save errors are ignored, because a rule that
+     * cannot be remembered must not stop the firewall from being fixed.
+     */
+    fn save_parked(&mut self) {
+        if let Some(path) = &self.parked_path {
+            let _ = self.parked.save(path);
         }
     }
 
@@ -3369,6 +3723,7 @@ impl App {
                 let _ = self.journal.save(path);
             }
             self.refresh();
+            self.reconcile_parked();
             self.set_status(StatusLevel::Good, format!("undone: {}", entry.description));
         } else {
             self.modal = Some(Modal::Message(Box::new(MessageModal {
@@ -3411,7 +3766,8 @@ impl App {
             Modal::Confirm(mut confirm) => match key.code {
                 KeyCode::Enter | KeyCode::Char('y') => {
                     let change = confirm.change.clone();
-                    self.apply(&change);
+                    let pending = confirm.pending.clone();
+                    self.apply(&change, &pending);
                 }
                 KeyCode::Char('d') | KeyCode::Char('D') => {
                     confirm.show_dry = !confirm.show_dry;
@@ -3669,7 +4025,9 @@ fn meaning_of(change: &Change, pending: &PendingChange) -> String {
         return explain::explain_draft(draft);
     }
     if let Some(rule) = &pending.rule {
-        let verb = if change
+        let verb = if pending.kind == ChangeKind::ParkRule {
+            "Comment out the rule that says:"
+        } else if change
             .steps
             .iter()
             .any(|step| step.iter().any(|arg| arg == "delete"))
