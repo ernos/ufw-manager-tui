@@ -1,6 +1,10 @@
 
 # CHANGELOG
 
+## Version 0.1.5
+
+- Fixed bug where editing a rule would delete the edited rule instead.
+
 ## Version 0.1.4
 
 - Editing a rule (`e` on the Rules tab) now opens the wizard on the Advanced step when the "Skip wizard" setting is enabled, matching how adding a rule behaves.

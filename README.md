@@ -79,10 +79,13 @@ ufw-manager-tui --demo
 ## 4. Real world use
 
 There is currently a bug (rendering error) when using the build in key binding `X` to escalate privileges to see and edit firewall rules. Instead use:
+
 ```bash
 sudo -- ufw-manager-tui
 ```
+
 or create a link for sudo user
+
 ```bash
 cd /bin
 ln -s /usr/bin/ufw-manager-tui . # Creates a link so that root/sudo can run it
@@ -97,7 +100,7 @@ You can do everything with the arrow keys, `Enter` and `Esc`. Letter keys are sh
 always shows the ones that apply right now.
 
 | Key | What it does |
-|---|---|
+| --. | --- |
 | `Tab` / `Shift+Tab` | Next / previous tab |
 | `1` … `7` | Jump to a tab |
 | `↑ ↓` | Move the selection |
@@ -170,7 +173,7 @@ On the Rules tab: `a` add, `e` edit, `d` delete, `y` duplicate, `x` move, `t` te
 `ufw` only shows and changes rules when it runs as root.
 
 | Situation | Behaviour |
-|---|---|
+| --- | --- |
 | Started with `sudo` | Everything works |
 | Started unprivileged | Read-only: firewall on/off and log level come from the world-readable `/etc/ufw/ufw.conf`; ufw refuses to show the rules to anybody else, and the app says so instead of pretending |
 | First write while unprivileged | Leaves raw mode, runs `sudo -v`, and retries — disable with `--no-escalate` |
@@ -178,13 +181,12 @@ On the Rules tab: `a` add, `e` edit, `d` delete, `y` duplicate, `x` move, `t` te
 
 ## 9. Options
 
-```
+```bash
 ufw-manager-tui [OPTIONS]
-
       --demo              Run against a fake firewall; nothing is read or changed
       --readonly          Never change the firewall
       --no-escalate       Never invoke sudo
-  -y, --yes               Skip the confirmation dialog (the dry run still happens)
+      -y, --yes               Skip the confirmation dialog (the dry run still happens)
       --no-color          Use text risk badges instead of colours
       --ascii             Force ASCII box drawing
       --theme <THEME>     dark, light, 16color or mono
@@ -251,3 +253,8 @@ the manual verification checklist, and [docs/GLOSSARY.md](docs/GLOSSARY.md) for 
 ## 14. Licence
 
 MIT.
+
+## 15. License and contact
+
+ Created by user 'pebnop' at creates.io
+ Send me an email with suggestions, bug reporting or questions by visiting my website [https://www.yourdev.net/#contact](www.yourdev.net/#contact)

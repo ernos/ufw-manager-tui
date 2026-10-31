@@ -343,7 +343,7 @@ pub fn change_delete(rule: &Rule) -> Result<Change, String> {
             crate::core::explain::explain_rule(rule)
         ),
         steps: vec![delete_by_number(rule.number)],
-        inverse: vec![insert_rule(&draft, rule.number)?],
+        inverse: vec![insert_rule(&draft, rule.number-1)?],
     })
 }
 
@@ -847,7 +847,7 @@ mod tests {
         let change = change_delete(&rule).unwrap();
         assert_eq!(change.steps, vec![argv(&["--force", "delete", "4"])]);
         assert_eq!(change.inverse[0][0], "insert");
-        assert_eq!(change.inverse[0][1], "4");
+        assert_eq!(change.inverse[0][1], "3");
         assert!(change.inverse[0].contains(&"SSH".to_string()));
     }
 

@@ -2461,6 +2461,7 @@ impl App {
                     Some(value)
                 };
             }
+            
             InputField::Port => match value.parse::<PortSpec>() {
                 Ok(spec) => {
                     self.wizard.draft.to_port = spec;
@@ -2646,7 +2647,7 @@ impl App {
                     self.wizard.error = Some("that rule no longer exists".into());
                     return;
                 };
-                let change = match command::change_edit(&rule, &draft) {
+                let change: Change = match command::change_edit(&rule, &draft) {
                     Ok(change) => change,
                     Err(error) => {
                         self.wizard.error = Some(error);
